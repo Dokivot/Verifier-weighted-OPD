@@ -1,0 +1,97 @@
+defaults: base.yaml
+
+project:
+  run_tier: cpu-smoke
+
+paths:
+  artifact_dir: artifacts/smoke
+  data_dir: artifacts/smoke/data
+  checkpoint_dir: artifacts/smoke/checkpoints
+  report_dir: artifacts/smoke/reports
+
+models:
+  student:
+    name: mock-student
+    revision: mock-v1
+    tokenizer_revision: mock-tokenizer-v1
+  teacher:
+    name: mock-teacher
+    revision: mock-teacher-v1
+    tokenizer_revision: mock-tokenizer-v1
+  vocab_size: 256
+
+data:
+  source: local
+  dataset_name: local-math-smoke
+  dataset_revision: fixture-v1
+  input_path: tests/fixtures/math_smoke.jsonl
+  format: jsonl
+  allow_smaller: false
+  counts:
+    smoke: 4
+    validation: 4
+    train: 16
+
+contamination:
+  train_path: artifacts/smoke/data/curated/train.jsonl
+  eval_paths:
+    - artifacts/smoke/data/curated/validation.jsonl
+
+rollout:
+  backend: mock
+  batch_size: 4
+  shard_size: 5
+  generation:
+    temperature: 0.0
+    top_p: 1.0
+    max_new_tokens: 64
+    num_samples: 1
+
+teacher:
+  backend: mock
+  top_k: 4
+  shard_size: 5
+
+training:
+  backend: mock
+  method: weighted_opd
+  input_path: artifacts/smoke/data/training_views/round_0/weighted_opd.jsonl
+  validation_path: artifacts/smoke/data/curated/validation.jsonl
+  output_dir: artifacts/smoke/checkpoints/weighted_opd_seed42
+  max_steps: 1
+
+evaluation:
+  backend: mock
+  model_name: mock-weighted-opd
+  model_revision: smoke-v1
+  output_dir: artifacts/smoke/evaluation/weighted_opd
+  batch_size: 4
+  generation:
+    temperature: 0.0
+    top_p: 1.0
+    max_new_tokens: 64
+    num_samples: 1
+  suites:
+    smoke:
+      input_path: artifacts/smoke/data/curated/validation.jsonl
+      max_samples: 4
+
+report:
+  output_dir: artifacts/smoke/reports
+  summary_paths:
+    - artifacts/smoke/evaluation/weighted_opd/smoke/summary.json
+  comparison_paths: []
+  training_runs:
+    - name: Weighted OPD smoke
+      summary_path: artifacts/smoke/checkpoints/weighted_opd_seed42/training_summary.json
+  runs:
+    - name: Weighted OPD smoke
+      summary_path: artifacts/smoke/evaluation/weighted_opd/smoke/summary.json
+      job_metric_paths:
+        - artifacts/smoke/data/rollouts/round_0/job_metrics.json
+        - artifacts/smoke/data/annotations/round_0/job_metrics.json
+        - artifacts/smoke/checkpoints/weighted_opd_seed42/job_metrics.json
+        - artifacts/smoke/evaluation/weighted_opd/smoke/job_metrics.json
+
+promotion:
+  allow_unknown_git_commit: true

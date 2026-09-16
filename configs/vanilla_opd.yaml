@@ -1,0 +1,9 @@
+defaults: main.yaml
+
+training:
+  method: vanilla_opd
+  input_path: artifacts/data/training_views/round_0/vanilla_opd.parquet
+  output_dir: checkpoints/vanilla_opd_seed42
+
+evaluation:
+  output_dir: artifacts/evaluation/vanilla_opd

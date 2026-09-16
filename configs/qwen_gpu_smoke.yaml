@@ -1,0 +1,74 @@
+defaults: main.yaml
+
+project:
+  run_tier: qwen-gpu-smoke
+
+paths:
+  artifact_dir: artifacts/qwen_gpu_smoke
+  data_dir: artifacts/qwen_gpu_smoke/data
+  checkpoint_dir: artifacts/qwen_gpu_smoke/checkpoints
+  report_dir: artifacts/qwen_gpu_smoke/reports
+
+data:
+  counts:
+    smoke: 4
+    validation: 8
+    train: 32
+
+contamination:
+  train_path: artifacts/qwen_gpu_smoke/data/curated/train.parquet
+  eval_paths:
+    - artifacts/qwen_gpu_smoke/data/eval/math500.parquet
+    - artifacts/qwen_gpu_smoke/data/eval/aime_2024.parquet
+    - artifacts/qwen_gpu_smoke/data/eval/aime_2025.parquet
+
+rollout:
+  input_path: artifacts/qwen_gpu_smoke/data/contamination/train_clean.parquet
+  batch_size: 4
+  shard_size: 8
+  generation:
+    max_new_tokens: 512
+
+verification:
+  prompt_path: artifacts/qwen_gpu_smoke/data/contamination/train_clean.parquet
+
+teacher:
+  shard_size: 8
+  max_length: 1024
+
+training:
+  input_path: artifacts/qwen_gpu_smoke/data/training_views/round_0/weighted_opd.parquet
+  validation_path: artifacts/qwen_gpu_smoke/data/curated/validation.parquet
+  output_dir: artifacts/qwen_gpu_smoke/checkpoints/weighted_opd_seed42
+  max_length: 1024
+  gradient_accumulation_steps: 4
+  max_steps: 2
+  save_steps: 1
+  early_stopping:
+    eval_steps: 1
+    patience: 2
+    min_delta: 0.0
+    max_epochs_per_round: 1
+    max_validation_samples: 2
+    max_new_tokens: 64
+    max_instruction_validation_samples: 2
+    instruction_max_new_tokens: 32
+
+evaluation:
+  backend: vllm
+  output_dir: artifacts/qwen_gpu_smoke/evaluation/weighted_opd
+  batch_size: 2
+  max_model_length: 2048
+  generation:
+    max_new_tokens: 256
+  suites:
+    smoke:
+      input_path: artifacts/qwen_gpu_smoke/data/curated/validation.parquet
+      max_samples: 4
+
+benchmark:
+  tasks: [math500]
+  max_samples: 2
+
+promotion:
+  allow_unknown_git_commit: false

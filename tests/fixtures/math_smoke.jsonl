@@ -1,0 +1,24 @@
+{"problem":"Compute 2 + 3.","answer":"5","solution":"Adding gives 2 + 3 = 5. Final answer: \\boxed{5}","subject":"arithmetic","level":"easy","source":"fixture"}
+{"problem":"Compute 9 - 4.","answer":"5","solution":"Subtracting gives 9 - 4 = 5. Final answer: \\boxed{5}","subject":"arithmetic","level":"easy","source":"fixture"}
+{"problem":"Compute 6 * 7.","answer":"42","solution":"Multiplying gives 6 * 7 = 42. Final answer: \\boxed{42}","subject":"arithmetic","level":"easy","source":"fixture"}
+{"problem":"Compute 24 / 6.","answer":"4","solution":"Dividing gives 24 / 6 = 4. Final answer: \\boxed{4}","subject":"arithmetic","level":"easy","source":"fixture"}
+{"problem":"Compute 3 ** 3.","answer":"27","solution":"Cubing 3 gives 27. Final answer: \\boxed{27}","subject":"powers","level":"easy","source":"fixture"}
+{"problem":"Compute 18 // 5.","answer":"3","solution":"Integer division gives 3. Final answer: \\boxed{3}","subject":"arithmetic","level":"easy","source":"fixture"}
+{"problem":"Compute -8 + 13.","answer":"5","solution":"The sum is 5. Final answer: \\boxed{5}","subject":"integers","level":"easy","source":"fixture"}
+{"problem":"Compute 15 - 22.","answer":"-7","solution":"The difference is -7. Final answer: \\boxed{-7}","subject":"integers","level":"easy","source":"fixture"}
+{"problem":"Compute (4 + 5) * 2.","answer":"18","solution":"First add to get 9, then multiply by 2. Final answer: \\boxed{18}","subject":"order-of-operations","level":"medium","source":"fixture"}
+{"problem":"Compute 100 / 4 + 3.","answer":"28","solution":"100 / 4 is 25, then add 3. Final answer: \\boxed{28}","subject":"order-of-operations","level":"medium","source":"fixture"}
+{"problem":"Compute 7 * 8 - 6.","answer":"50","solution":"7 * 8 is 56, then subtract 6. Final answer: \\boxed{50}","subject":"order-of-operations","level":"medium","source":"fixture"}
+{"problem":"Compute 2 ** 5 + 1.","answer":"33","solution":"2 to the fifth power is 32, then add 1. Final answer: \\boxed{33}","subject":"powers","level":"medium","source":"fixture"}
+{"problem":"Compute 81 / 9.","answer":"9","solution":"81 divided by 9 is 9. Final answer: \\boxed{9}","subject":"arithmetic","level":"easy","source":"fixture"}
+{"problem":"Compute 14 + 27.","answer":"41","solution":"The sum is 41. Final answer: \\boxed{41}","subject":"arithmetic","level":"easy","source":"fixture"}
+{"problem":"Compute 12 * 12.","answer":"144","solution":"12 squared is 144. Final answer: \\boxed{144}","subject":"powers","level":"easy","source":"fixture"}
+{"problem":"Compute 50 - 17.","answer":"33","solution":"The difference is 33. Final answer: \\boxed{33}","subject":"arithmetic","level":"easy","source":"fixture"}
+{"problem":"Compute (10 - 3) ** 2.","answer":"49","solution":"10 - 3 is 7, and 7 squared is 49. Final answer: \\boxed{49}","subject":"powers","level":"medium","source":"fixture"}
+{"problem":"Compute 64 // 8 + 2.","answer":"10","solution":"64 // 8 is 8, then add 2. Final answer: \\boxed{10}","subject":"order-of-operations","level":"medium","source":"fixture"}
+{"problem":"Compute 5 * (9 - 4).","answer":"25","solution":"9 - 4 is 5, then multiply by 5. Final answer: \\boxed{25}","subject":"order-of-operations","level":"medium","source":"fixture"}
+{"problem":"Compute 144 / 12.","answer":"12","solution":"144 divided by 12 is 12. Final answer: \\boxed{12}","subject":"arithmetic","level":"easy","source":"fixture"}
+{"problem":"Compute -3 * 7.","answer":"-21","solution":"A negative times a positive is negative. Final answer: \\boxed{-21}","subject":"integers","level":"easy","source":"fixture"}
+{"problem":"Compute 11 + 22 + 33.","answer":"66","solution":"The total is 66. Final answer: \\boxed{66}","subject":"arithmetic","level":"medium","source":"fixture"}
+{"problem":"Compute 90 / 3 - 8.","answer":"22","solution":"90 / 3 is 30, then subtract 8. Final answer: \\boxed{22}","subject":"order-of-operations","level":"medium","source":"fixture"}
+{"problem":"Compute 4 ** 3 - 14.","answer":"50","solution":"4 cubed is 64, then subtract 14. Final answer: \\boxed{50}","subject":"powers","level":"medium","source":"fixture"}

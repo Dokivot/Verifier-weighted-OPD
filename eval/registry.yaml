@@ -1,0 +1,30 @@
+benchmarks:
+  math500:
+    provider: lighteval
+    task: lighteval|math_500|0|0
+    primary_metric: accuracy
+    role: primary_math
+  aime2024:
+    provider: lighteval
+    task: lighteval|aime24|0|0
+    primary_metric: accuracy
+    role: hard_math
+  gpqa_diamond:
+    provider: lighteval
+    task: lighteval|gpqa:diamond|0|0
+    primary_metric: accuracy
+    role: out_of_distribution
+  ifeval:
+    provider: lighteval
+    task: extended|ifeval|0|0
+    custom_tasks: lighteval.tasks.extended.ifeval.main
+    primary_metric: prompt_level_strict_acc
+    role: capability_regression
+
+protocol:
+  experiment_seed: 42
+  training_seeds: [42]
+  greedy_temperature: 0.0
+  greedy_samples: 1
+  paired_bootstrap_iterations: 10000
+  note: Paired intervals quantify item-level uncertainty, not training-seed variance.

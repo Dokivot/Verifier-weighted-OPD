@@ -1,0 +1,10 @@
+defaults: main.yaml
+
+training:
+  method: confidence_opd
+  input_path: artifacts/data/training_views/round_0/confidence_opd.parquet
+  output_dir: checkpoints/confidence_opd_seed42
+  max_steps: 400
+
+evaluation:
+  output_dir: artifacts/evaluation/confidence_opd

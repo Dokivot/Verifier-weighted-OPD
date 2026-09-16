@@ -1,0 +1,23 @@
+defaults: weighted_opd.yaml
+
+paths:
+  artifact_dir: artifacts
+  data_dir: artifacts/data/round_1_weighted
+  checkpoint_dir: checkpoints
+  report_dir: reports
+
+models:
+  student:
+    name: artifacts/merged/weighted_opd_round0
+    revision: local-merged
+    tokenizer_revision: b968826d9c46dd6066d109eabc6255188de91218
+
+rollout:
+  input_path: artifacts/data/contamination/train_clean.parquet
+
+training:
+  input_path: artifacts/data/round_1_weighted/training_views/round_1/weighted_opd.parquet
+  output_dir: checkpoints/round_1_weighted_opd_seed42
+
+evaluation:
+  output_dir: artifacts/evaluation/round_1_weighted_opd

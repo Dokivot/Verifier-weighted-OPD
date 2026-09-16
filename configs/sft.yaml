@@ -1,0 +1,9 @@
+defaults: main.yaml
+
+training:
+  method: sft
+  input_path: artifacts/data/contamination/train_clean.parquet
+  output_dir: checkpoints/sft_seed42
+
+evaluation:
+  output_dir: artifacts/evaluation/sft

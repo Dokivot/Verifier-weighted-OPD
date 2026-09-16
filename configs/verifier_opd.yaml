@@ -1,0 +1,10 @@
+defaults: main.yaml
+
+training:
+  method: verifier_opd
+  input_path: artifacts/data/training_views/round_0/verifier_opd.parquet
+  output_dir: checkpoints/verifier_opd_seed42
+  max_steps: 400
+
+evaluation:
+  output_dir: artifacts/evaluation/verifier_opd

@@ -1,0 +1,107 @@
+defaults: smoke.yaml
+
+project:
+  run_tier: tiny-gpu-smoke
+
+paths:
+  artifact_dir: artifacts/tiny_gpu_smoke
+  data_dir: artifacts/tiny_gpu_smoke/data
+  checkpoint_dir: artifacts/tiny_gpu_smoke/checkpoints
+  report_dir: artifacts/tiny_gpu_smoke/reports
+
+models:
+  student:
+    name: Qwen/Qwen2.5-0.5B-Instruct
+    revision: 7ae557604adf67be50417f59c2c2f167def9a775
+    tokenizer_revision: 7ae557604adf67be50417f59c2c2f167def9a775
+  teacher:
+    name: Qwen/Qwen2.5-1.5B-Instruct
+    revision: 989aa7980e4cf806f80c7fef2b1adb7bc71aa306
+    tokenizer_revision: 989aa7980e4cf806f80c7fef2b1adb7bc71aa306
+  vocab_size: 151936
+
+contamination:
+  train_path: artifacts/tiny_gpu_smoke/data/curated/train.jsonl
+  eval_paths:
+    - artifacts/tiny_gpu_smoke/data/curated/validation.jsonl
+
+rollout:
+  backend: transformers
+  input_path: artifacts/tiny_gpu_smoke/data/contamination/train_clean.jsonl
+  batch_size: 2
+  shard_size: 4
+  dtype: bfloat16
+  generation:
+    temperature: 0.0
+    top_p: 1.0
+    max_new_tokens: 128
+    num_samples: 1
+
+verification:
+  prompt_path: artifacts/tiny_gpu_smoke/data/contamination/train_clean.jsonl
+
+teacher:
+  backend: transformers
+  top_k: 16
+  dtype: bfloat16
+  load_in_8bit: false
+  shard_size: 4
+
+training:
+  backend: transformers
+  method: weighted_opd
+  input_path: artifacts/tiny_gpu_smoke/data/training_views/round_0/weighted_opd.jsonl
+  validation_path: artifacts/tiny_gpu_smoke/data/curated/validation.jsonl
+  output_dir: artifacts/tiny_gpu_smoke/checkpoints/weighted_opd_seed42
+  max_length: 512
+  batch_size: 1
+  gradient_accumulation_steps: 2
+  max_steps: 1
+  save_steps: 1
+  early_stopping:
+    eval_steps: 1
+    patience: 1
+    min_delta: 0.0
+    max_epochs_per_round: 1
+    max_validation_samples: 2
+    max_new_tokens: 64
+  lora:
+    r: 8
+    alpha: 16
+    dropout: 0.05
+    target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+
+evaluation:
+  backend: transformers
+  model_name: Qwen/Qwen2.5-0.5B-Instruct
+  model_revision: 7ae557604adf67be50417f59c2c2f167def9a775
+  tokenizer_revision: 7ae557604adf67be50417f59c2c2f167def9a775
+  dtype: bfloat16
+  output_dir: artifacts/tiny_gpu_smoke/evaluation/weighted_opd
+  batch_size: 2
+  generation:
+    temperature: 0.0
+    top_p: 1.0
+    max_new_tokens: 128
+    num_samples: 1
+  suites:
+    smoke:
+      input_path: artifacts/tiny_gpu_smoke/data/curated/validation.jsonl
+      max_samples: 4
+
+report:
+  output_dir: artifacts/tiny_gpu_smoke/reports
+  summary_paths:
+    - artifacts/tiny_gpu_smoke/evaluation/weighted_opd/smoke/summary.json
+  comparison_paths: []
+  training_runs:
+    - name: Weighted OPD tiny smoke
+      summary_path: artifacts/tiny_gpu_smoke/checkpoints/weighted_opd_seed42/training_summary.json
+  runs:
+    - name: Weighted OPD tiny smoke
+      summary_path: artifacts/tiny_gpu_smoke/evaluation/weighted_opd/smoke/summary.json
+      job_metric_paths:
+        - artifacts/tiny_gpu_smoke/data/rollouts/round_0/job_metrics.json
+        - artifacts/tiny_gpu_smoke/data/annotations/round_0/job_metrics.json
+        - artifacts/tiny_gpu_smoke/checkpoints/weighted_opd_seed42/job_metrics.json
+        - artifacts/tiny_gpu_smoke/evaluation/weighted_opd/smoke/job_metrics.json

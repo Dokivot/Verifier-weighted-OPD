@@ -1,0 +1,9 @@
+defaults: main.yaml
+
+training:
+  method: weighted_opd
+  input_path: artifacts/data/training_views/round_0/weighted_opd.parquet
+  output_dir: checkpoints/weighted_opd_seed42
+
+evaluation:
+  output_dir: artifacts/evaluation/weighted_opd

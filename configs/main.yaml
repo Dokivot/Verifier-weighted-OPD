@@ -1,0 +1,16 @@
+defaults: base.yaml
+
+project:
+  run_tier: minimum-credible
+
+contamination:
+  eval_paths:
+    - artifacts/data/eval/math500.parquet
+    - artifacts/data/eval/aime_2024.parquet
+    - artifacts/data/eval/aime_2025.parquet
+
+rollout:
+  input_path: artifacts/data/contamination/train_clean.parquet
+
+verification:
+  prompt_path: artifacts/data/contamination/train_clean.parquet
