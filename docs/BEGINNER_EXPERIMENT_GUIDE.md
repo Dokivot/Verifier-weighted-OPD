@@ -4,7 +4,8 @@
 可以写进简历、可以在面试时解释的 OPD 实验结果。
 
 > 重要结论：本项目的 CPU 工程链路已经在本地验证，但真实 QLoRA、Qwen3-14B Teacher、vLLM
-> 和 LightEval 必须在 NVIDIA GPU 服务器上完成两级 smoke test 后，才能开始正式 15k 实验。
+> 和 LightEval 必须在 NVIDIA GPU 服务器上完成两级 smoke test 后，才能开始正式实验。项目会
+> 准备 15,000 条清洗候选题，但正式 rollout 和每种训练方法只使用固定前 7,500 条。
 
 ---
 
@@ -404,7 +405,7 @@ df -h /root/autodl-tmp
 6. LightEval 产生 results、details、`command.json` 和 `manifest.json`；
 7. 数据盘仍至少有 15GiB 空闲。
 
-只有这一步完整成功，才能开始正式 15k 实验。
+只有这一步完整成功，才能开始正式 7.5k 实验。
 
 ---
 
@@ -430,7 +431,7 @@ cat artifacts/data/manifests/data_prepare.json
 
 - smoke：128；
 - validation：1000；
-- train：15000。
+- train 候选池：15000；正式 rollout 和训练从中固定选择前 7500 条。
 
 ### 11.2 自动下载固定版本 benchmark
 
@@ -480,8 +481,34 @@ uv run --no-sync opd audit sparse-kl \
 
 ```bash
 scripts/generate_rollouts.sh configs/rollout.yaml 0 \
-  2>&1 | tee logs/20_round0_rollout.log
+  2>&1 | tee logs/20_round0_rollout_3072.log
 ```
+
+正式配置会让 Qwen3-8B 最多生成 3072 个 response tokens，共处理 7500 道题（38 个 shard）。
+程序不会直接把全部成本花完：累计 800 条成功样本时会自动计算截断率，只有截断率不高于 20%
+才继续。另开一个 tmux 窗口可查看：
+
+```bash
+cd /root/autodl-tmp/OPDProj
+cat artifacts/data/rollouts/round_0/quality_gate.json
+```
+
+状态含义：
+
+- `collecting`：尚未完成 800 条，继续等待；
+- `passed`：门禁通过，脚本会自动继续剩余 6700 条；
+- `failed`：脚本已自动终止，不要运行 Verifier 或 Teacher。
+
+只统计本次配置对应的 shard，不要把旧 pilot 混入统计：
+
+```bash
+RUN_ID=$(uv run --no-sync python -c \
+  'import json; print(json.load(open("artifacts/data/rollouts/round_0/quality_gate.json"))["artifact_run_id"])')
+find "artifacts/data/rollouts/round_0/shards/$RUN_ID" -type f -name '*.parquet' | wc -l
+```
+
+旧的 1536-token pilot shard 不需要删除。新配置的 hash 不同，因此不会错误复用；保留旧数据和
+日志可以在报告或面试中说明“先测量截断率，再依据证据修订实验”。
 
 主要输出：
 
@@ -489,9 +516,12 @@ scripts/generate_rollouts.sh configs/rollout.yaml 0 \
 artifacts/data/rollouts/round_0/rollouts.parquet
 artifacts/data/rollouts/round_0/manifest.json
 artifacts/data/rollouts/round_0/job_metrics.json
+artifacts/data/rollouts/round_0/quality_gate.json
 ```
 
-任务中断后重新运行同一条命令。成功 shard 会复用，不需要从头生成。
+任务中断后重新运行同一条命令。成功 shard 会复用，不需要从头生成。只有 `rollouts.parquet`、
+`manifest.json` 和 `job_metrics.json` 已经产生，且 `quality_gate.json` 的 `status` 是 `passed`，
+才能进入 12.2。
 
 ### 12.2 数学 Verifier
 

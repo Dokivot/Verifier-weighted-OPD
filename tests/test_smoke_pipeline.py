@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from copy import deepcopy
 from pathlib import Path
+from unittest.mock import patch
 
 from opd.artifacts import build_manifest, save_manifest
 from opd.config import load_config
@@ -11,6 +12,7 @@ from opd.data.contamination import audit_contamination
 from opd.data.prepare import prepare_dataset
 from opd.evaluation.runner import evaluate
 from opd.reporting.build import build_report
+from opd.rollout.base import Generation
 from opd.rollout.pipeline import generate_rollouts
 from opd.tableio import read_json, read_records, write_records
 from opd.teacher.pipeline import annotate_rollouts
@@ -100,6 +102,85 @@ class SmokePipelineTest(unittest.TestCase):
             save_manifest(root / "data/annotations/round_0/manifest.json", manifest)
             with self.assertRaisesRegex(ValueError, "Tokenizer vocabulary mismatch"):
                 build_training_view(config, round_id=0, method="weighted_opd")
+
+    def test_rollout_truncation_gate_stops_after_minimum_sample(self) -> None:
+        class CappedBackend:
+            model_name = "capped-student"
+            model_revision = "capped-v1"
+            tokenizer_revision = "capped-tokenizer-v1"
+            tokenizer_fingerprint = "capped-tokenizer"
+
+            def generate(self, prompts: list[str], *, seed: int) -> list[Generation]:
+                del seed
+                return [
+                    Generation(text="unfinished", prompt_tokens=4, response_tokens=3)
+                    for _ in prompts
+                ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = self._config(root)
+            config["rollout"]["max_prompts"] = 8
+            config["rollout"]["shard_size"] = 4
+            config["rollout"]["generation"]["max_new_tokens"] = 3
+            config["rollout"]["quality_gate"] = {
+                "enabled": True,
+                "min_samples": 4,
+                "max_truncation_rate": 0.2,
+            }
+            prepare_dataset(config)
+            audit_contamination(config)
+
+            with (
+                patch("opd.rollout.pipeline._backend", return_value=CappedBackend()),
+                self.assertRaisesRegex(RuntimeError, "100.00% exceeded 20.00%"),
+            ):
+                generate_rollouts(config, round_id=0)
+
+            quality = read_json(root / "data/rollouts/round_0/quality_gate.json")
+            self.assertEqual(quality["status"], "failed")
+            self.assertEqual(quality["successful_records"], 4)
+            self.assertEqual(quality["truncated_records"], 4)
+            self.assertEqual(
+                len(list((root / "data/rollouts/round_0/shards").rglob("*.jsonl"))),
+                1,
+            )
+
+    def test_rollout_limits_the_selected_prompt_pool(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = self._config(root)
+            config["rollout"]["max_prompts"] = 7
+            prepare_dataset(config)
+            audit_contamination(config)
+
+            rollout_path = generate_rollouts(config, round_id=0)
+
+            self.assertEqual(len(read_records(rollout_path)), 7)
+            manifest = read_json(root / "data/rollouts/round_0/manifest.json")
+            self.assertEqual(manifest["metadata"]["available_prompt_count"], 16)
+            self.assertEqual(manifest["metadata"]["selected_prompt_count"], 7)
+
+    def test_rollout_gate_requires_enough_successful_records(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = self._config(root)
+            config["rollout"]["max_prompts"] = 3
+            config["rollout"]["quality_gate"] = {
+                "enabled": True,
+                "min_samples": 4,
+                "max_truncation_rate": 0.2,
+            }
+            prepare_dataset(config)
+            audit_contamination(config)
+
+            with self.assertRaisesRegex(RuntimeError, "only 3 successful records"):
+                generate_rollouts(config, round_id=0)
+
+            quality = read_json(root / "data/rollouts/round_0/quality_gate.json")
+            self.assertEqual(quality["status"], "collecting")
+            self.assertFalse((root / "data/rollouts/round_0/rollouts.jsonl").exists())
+            self.assertFalse((root / "data/rollouts/round_0/manifest.json").exists())
 
 
 if __name__ == "__main__":

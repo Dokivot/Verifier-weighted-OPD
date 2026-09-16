@@ -93,6 +93,7 @@ class VLLMBackendTest(unittest.TestCase):
                 "top_k": 20,
                 "max_tokens": 512,
                 "seed": 42,
+                "skip_special_tokens": False,
             },
         )
         self.assertEqual(generations[0].text, "answer")

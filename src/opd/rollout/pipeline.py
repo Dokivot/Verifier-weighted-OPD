@@ -17,7 +17,32 @@ from opd.rollout.mock import MockRolloutBackend
 from opd.rollout.vllm_backend import VLLMRolloutBackend
 from opd.schemas import PromptRecord, RecordStatus, RolloutRecord
 from opd.sharding import chunks, load_complete_shard, shard_path
-from opd.tableio import read_records, write_records
+from opd.tableio import read_records, write_json, write_records
+
+
+def _quality_gate_summary(
+    records: list[RolloutRecord],
+    *,
+    max_new_tokens: int,
+    min_samples: int,
+    max_truncation_rate: float,
+    artifact_run_id: str,
+) -> dict[str, Any]:
+    successful = [record for record in records if record.status == RecordStatus.SUCCESS]
+    truncated = sum(record.response_tokens >= max_new_tokens for record in successful)
+    truncation_rate = truncated / len(successful) if successful else 0.0
+    evaluated = len(successful) >= min_samples
+    failed = evaluated and truncation_rate > max_truncation_rate
+    return {
+        "artifact_run_id": artifact_run_id,
+        "status": "failed" if failed else "passed" if evaluated else "collecting",
+        "successful_records": len(successful),
+        "truncated_records": truncated,
+        "truncation_rate": truncation_rate,
+        "max_new_tokens": max_new_tokens,
+        "minimum_samples": min_samples,
+        "maximum_truncation_rate": max_truncation_rate,
+    }
 
 
 def _backend(config: dict[str, Any]) -> Any:
@@ -62,10 +87,25 @@ def generate_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
     )
     output_dir = data_dir / "rollouts" / f"round_{round_id}"
     output_path = output_dir / f"rollouts.{extension}"
+    manifest_path = output_dir / "manifest.json"
     metrics_path = output_dir / "job_metrics.json"
-    prompts = [PromptRecord.model_validate(row) for row in read_records(prompt_path)]
+    available_prompts = [PromptRecord.model_validate(row) for row in read_records(prompt_path)]
+    max_prompts_value = config["rollout"].get("max_prompts")
+    max_prompts = int(max_prompts_value) if max_prompts_value is not None else None
+    if max_prompts is not None and max_prompts <= 0:
+        raise ValueError("rollout.max_prompts must be positive when configured")
+    prompts = available_prompts[:max_prompts]
     backend = _backend(config)
     generation_config = config["rollout"]["generation"]
+    max_new_tokens = int(generation_config.get("max_new_tokens", 1024))
+    quality_gate_config = config["rollout"].get("quality_gate", {})
+    quality_gate_enabled = bool(quality_gate_config.get("enabled", False))
+    quality_gate_min_samples = int(quality_gate_config.get("min_samples", 800))
+    quality_gate_max_rate = float(quality_gate_config.get("max_truncation_rate", 0.2))
+    if quality_gate_min_samples <= 0:
+        raise ValueError("rollout.quality_gate.min_samples must be positive")
+    if not 0.0 <= quality_gate_max_rate <= 1.0:
+        raise ValueError("rollout.quality_gate.max_truncation_rate must be between 0 and 1")
     sampling_hash = stable_hash(generation_config, length=16)
     shard_cache_hash = stable_hash(
         {
@@ -74,6 +114,10 @@ def generate_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
             "tokenizer_revision": backend.tokenizer_revision,
             "tokenizer_fingerprint": backend.tokenizer_fingerprint,
             "sampling": generation_config,
+            "prompt_selection": {
+                "max_prompts": max_prompts,
+                "sample_ids": [record.sample_id for record in prompts],
+            },
             "upstream_artifact_id": upstream_id,
         },
         length=16,
@@ -87,6 +131,24 @@ def generate_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
     generated_shards = 0
     failures = 0
     shard_directory = output_dir / "shards" / shard_cache_hash
+    quality_gate_path = output_dir / "quality_gate.json"
+
+    output_path.unlink(missing_ok=True)
+    manifest_path.unlink(missing_ok=True)
+
+    def update_quality_gate() -> dict[str, Any]:
+        summary = _quality_gate_summary(
+            records,
+            max_new_tokens=max_new_tokens,
+            min_samples=quality_gate_min_samples,
+            max_truncation_rate=quality_gate_max_rate,
+            artifact_run_id=shard_cache_hash,
+        )
+        summary["enabled"] = quality_gate_enabled
+        write_json(quality_gate_path, summary)
+        return summary
+
+    update_quality_gate()
 
     with JobTimer(
         "rollout",
@@ -105,6 +167,14 @@ def generate_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
             if existing is not None:
                 records.extend(existing)
                 reused_shards += 1
+                quality_summary = update_quality_gate()
+                if quality_gate_enabled and quality_summary["status"] == "failed":
+                    raise RuntimeError(
+                        "Rollout truncation quality gate failed after "
+                        f"{quality_summary['successful_records']} records: "
+                        f"{quality_summary['truncation_rate']:.2%} exceeded "
+                        f"{quality_gate_max_rate:.2%}."
+                    )
                 continue
 
             shard_records: list[RolloutRecord] = []
@@ -168,6 +238,22 @@ def generate_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
             write_records(part_path, [record.model_dump(mode="json") for record in shard_records])
             records.extend(shard_records)
             generated_shards += 1
+            quality_summary = update_quality_gate()
+            if quality_gate_enabled and quality_summary["status"] == "failed":
+                raise RuntimeError(
+                    "Rollout truncation quality gate failed after "
+                    f"{quality_summary['successful_records']} records: "
+                    f"{quality_summary['truncation_rate']:.2%} exceeded "
+                    f"{quality_gate_max_rate:.2%}."
+                )
+
+        quality_summary = update_quality_gate()
+        if quality_gate_enabled and quality_summary["status"] != "passed":
+            raise RuntimeError(
+                "Rollout truncation quality gate could not be evaluated: only "
+                f"{quality_summary['successful_records']} successful records were produced; "
+                f"at least {quality_gate_min_samples} are required."
+            )
 
     write_records(output_path, [record.model_dump(mode="json") for record in records])
     shard_files = sorted(shard_directory.glob(f"*.{extension}"))
@@ -175,7 +261,7 @@ def generate_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
         artifact_type="rollout",
         stage="rollout.generate",
         config=config,
-        files=[output_path, metrics_path, *shard_files],
+        files=[output_path, metrics_path, quality_gate_path, *shard_files],
         record_count=len(records),
         success_count=len(records) - failures,
         failure_count=failures,
@@ -189,7 +275,11 @@ def generate_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
             "generated_shards": generated_shards,
             "experiment_seed": seed,
             "shard_cache_hash": shard_cache_hash,
+            "available_prompt_count": len(available_prompts),
+            "selected_prompt_count": len(prompts),
+            "max_prompts": max_prompts,
+            "quality_gate": update_quality_gate(),
         },
     )
-    save_manifest(output_dir / "manifest.json", manifest)
+    save_manifest(manifest_path, manifest)
     return output_path

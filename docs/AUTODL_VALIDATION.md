@@ -54,11 +54,13 @@ scripts/qwen_gpu_smoke.sh
 adapter merge、vLLM 重新加载、LightEval results/details、峰值显存和剩余磁盘。Dockerfile 也仅做了
 静态审查，尚未在本地构建 CUDA 镜像。
 
-## 15k 扩容门禁
+## 正式扩容门禁
 
 只有 `artifacts/qwen_gpu_smoke/` 中所有阶段 manifest/job metrics 完整、无批量失败、loss 与
 gradient norm 有限、merged checkpoint 可评测，且 LightEval 两题 smoke 产生 results/details，
-才允许启动 15k。正式运行推荐单张 H100 80GB，并始终保留至少 15GiB 数据盘空闲。
+才允许从 15,000 条清洗候选池启动 7,500 条正式 rollout。正式配置使用 3,072 response token
+上限，并在 800 条成功样本后自动检查截断率；超过 20% 会立即失败，不得继续 Teacher
+annotation。正式运行推荐单张 H100/A800 80GB，并始终保留至少 15GiB 数据盘空闲。
 
 ## 结果解释边界
 

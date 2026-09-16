@@ -25,7 +25,7 @@
 即使控制 GPU 规模，项目仍然保留完整的工程和实验链路：
 
 - 使用 8B Student 和 14B Teacher；
-- 使用 15k 真实数学问题，而非几十条演示数据；
+- 准备 15k 真实数学问题候选池，并在固定 token 预算下使用其中 7.5k 条正式训练；
 - rollout 来自当前 Student，符合 on-policy 定义；
 - Teacher 在 Student response 上执行 teacher-forcing annotation；
 - 使用确定性的 Math-Verify，而非只依赖 LLM judge；
@@ -106,7 +106,7 @@
 | Split | 数量 | 用途 |
 |---|---:|---|
 | smoke | 128 | 完整 pipeline 快速验证 |
-| train | 15,000 | SFT 和 OPD 主训练 |
+| train | 15,000 | 清洗后的候选池；正式 SFT 和 OPD 均取固定前 7,500 条 |
 | validation | 1,000 | early-stop、checkpoint selection |
 | regression | 500 | 高频轻量回归，可与 validation 重叠但固定 |
 
@@ -164,9 +164,9 @@ Round 1 使用相同固定 seed。它用于展示多轮工程闭环，并比较�
 所有 OPD 方法共享 Round 0 Base Student rollout 和 Teacher annotation。必须固定：
 
 - Base Student revision；
-- 15k prompts；
+- 同一批 7,500 prompts；
 - 每题 1 个 rollout；
-- 最大 response tokens；
+- 最大 3,072 response tokens；
 - Teacher revision；
 - Teacher top-k；
 - optimizer 和 scheduler；
@@ -184,7 +184,10 @@ OpenR1-Math problems
 Curate / Split / Decontaminate
         │
         ▼
-15k Prompt Manifest
+15k Clean Candidate Pool
+        │
+        ▼
+Fixed First 7.5k Prompt Manifest
         │
         ▼
 Base Student rollout × 1
@@ -532,7 +535,7 @@ paired bootstrap 只能衡量评测样本的不确定性，不能替代多 seed 
 | 阶段 | H100 GPU 小时 | 备注 |
 |---|---:|---|
 | 小模型与 8B smoke | 6–12 | loss、mask、verifier、恢复 |
-| Base rollout：15k × 1 | 4–7 | 长度上限 1024–2048 |
+| Base rollout：7.5k × 1 | 4–7 | response 上限 3,072；800 条截断门禁 |
 | Round 0 Teacher annotation | 3–6 | top-32 + entropy |
 | SFT | 4–8 | seed 42，early-stop |
 | 四个 OPD 训练 run | 12–24 | Vanilla、Verifier、Confidence、Weighted 各一次 |
@@ -549,9 +552,9 @@ paired bootstrap 只能衡量评测样本的不确定性，不能替代多 seed 
 2. 消融只用 25%–50% train prompts；
 3. 完整 benchmark 只评测最终模型；
 4. Round 1 只运行两个最佳 checkpoint；
-5. 降低 rollout max tokens；
-6. 将 train 从 15k 降至 10k；
-7. 若仍超预算，将 train prompts 从 15k 降至 10k，并在报告中明确记录。
+5. 保持 3,072 token 上限，优先减少正式 prompt 数，而不是制造截断样本；
+6. 若 800 条门禁仍失败，停止并评估关闭 thinking mode，不盲目继续生成；
+7. 若仍超预算，将 7.5k 正式 prompts 进一步下调，并在报告中明确记录。
 
 不允许通过取消 Base、SFT、Vanilla OPD 或独立 validation 来省钱。
 
@@ -582,9 +585,9 @@ paired bootstrap 只能衡量评测样本的不确定性，不能替代多 seed 
 - tiny model 本地 smoke；
 - 8B vLLM rollout；
 - 分片、恢复和错误记录；
-- 128 条后扩展到 15k。
+- 先生成 800 条，通过截断率不高于 20% 的门禁后自动扩展到 7.5k。
 
-验收：中断后不会重复生成成功 shard。
+验收：中断后不会重复生成成功 shard；`quality_gate.json` 为 `passed`。
 
 ### M3：Teacher Annotation，3–5 天，3–7 GPU 小时
 
@@ -757,6 +760,6 @@ build-report
 11. 构建 Docker image；
 12. 运行 8B/14B 的 32 条 GPU smoke；
 13. 根据真实 tokens/s 更新 GPU 预算；
-14. 通过所有门禁后生成 15k Round 0 rollout。
+14. 从 15k 清洗候选池选择固定前 7.5k，生成 Round 0 rollout；800 条时自动执行截断门禁。
 
 前 13 项没有完成前，不启动大规模生成或训练。

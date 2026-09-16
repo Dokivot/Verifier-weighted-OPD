@@ -26,7 +26,12 @@ def train(config: dict[str, Any]) -> Path:
     upstream_id = verified_manifest_id(upstream_manifest)
     output_dir = Path(config["training"]["output_dir"])
     metrics_path = output_dir / "job_metrics.json"
-    record_count = len(read_records(input_path))
+    available_record_count = len(read_records(input_path))
+    max_records_value = config["training"].get("max_records")
+    max_records = int(max_records_value) if max_records_value is not None else None
+    if max_records is not None and max_records <= 0:
+        raise ValueError("training.max_records must be positive when configured")
+    selected_record_count = min(available_record_count, max_records or available_record_count)
     training_run_id = stable_hash(
         {"config": config, "upstream_artifact_id": upstream_id}, length=20
     )
@@ -43,7 +48,7 @@ def train(config: dict[str, Any]) -> Path:
             checkpoint = train_hf(config)
         else:
             raise ValueError(f"Unsupported training backend: {backend}")
-        timer.add(records=record_count)
+        timer.add(records=selected_record_count)
 
     files = [
         path for path in output_dir.rglob("*") if path.is_file() and path.name != "manifest.json"
@@ -60,6 +65,9 @@ def train(config: dict[str, Any]) -> Path:
             "method": config["training"]["method"],
             "backend": backend,
             "checkpoint": str(checkpoint),
+            "available_record_count": available_record_count,
+            "selected_record_count": selected_record_count,
+            "max_records": max_records,
         },
     )
     save_manifest(output_dir / "manifest.json", manifest)

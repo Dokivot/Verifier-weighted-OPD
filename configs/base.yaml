@@ -65,6 +65,7 @@ rollout:
   backend: vllm
   split: train
   input_path: null
+  max_prompts: 7500
   batch_size: 16
   shard_size: 200
   tensor_parallel_size: 1
@@ -75,8 +76,13 @@ rollout:
     temperature: 0.6
     top_p: 0.95
     top_k: 20
-    max_new_tokens: 1536
+    max_new_tokens: 3072
     num_samples: 1
+    skip_special_tokens: false
+  quality_gate:
+    enabled: true
+    min_samples: 800
+    max_truncation_rate: 0.2
 
 verification:
   prompt_path: null
@@ -88,7 +94,7 @@ teacher:
   top_k: 32
   dtype: bfloat16
   load_in_8bit: false
-  max_length: 2048
+  max_length: 4096
   shard_size: 200
 
 weighting:
@@ -103,13 +109,14 @@ weighting:
 training:
   backend: transformers
   method: weighted_opd
+  max_records: 7500
   input_path: artifacts/data/training_views/round_0/weighted_opd.parquet
   validation_path: artifacts/data/curated/validation.parquet
   output_dir: checkpoints/weighted_opd_seed42
   qlora: true
   dtype: bfloat16
   mixed_precision: bf16
-  max_length: 2048
+  max_length: 4096
   batch_size: 1
   gradient_accumulation_steps: 16
   gradient_checkpointing: true

@@ -60,9 +60,9 @@ scripts/qwen_gpu_smoke.sh
 ```
 
 该脚本会在启动前读取显存并拒绝低于 40GB-class 的 GPU。40/48GB 仅用于小规模门禁；
-15k 正式 Teacher annotation 仍推荐 H100 80GB。
+7.5k 正式 Teacher annotation 仍推荐 H100/A800 80GB。
 
-只有以下项目全部成立，才允许启动 15k：
+只有以下项目全部成立，才允许启动正式 7.5k rollout：
 
 1. `artifacts/qwen_gpu_smoke/` 下各阶段存在 `manifest.json` 和 `job_metrics.json`；
 2. rollout/annotation 无批量失败，Teacher 与 Student tokenizer fingerprint 一致；
@@ -89,10 +89,21 @@ uv run --no-sync opd audit sparse-kl \
 
 ```bash
 scripts/generate_rollouts.sh configs/rollout.yaml 0
+cat artifacts/data/rollouts/round_0/quality_gate.json
 scripts/verify.sh configs/main.yaml 0
 scripts/annotate_teacher.sh configs/teacher.yaml 0
 scripts/build_training_views.sh configs/main.yaml 0
 ```
+
+数据准备仍保留 15,000 条清洗候选题；rollout 和每种训练方法只使用固定前 7,500 条。生成上限为
+3,072 response tokens，共 38 个 shard。程序会在累计 800 条成功样本时检查截断率：
+
+- `collecting`：尚未到 800 条；
+- `passed`：截断率不高于 20%，程序继续完成剩余数据；
+- `failed`：程序自动终止，禁止继续 Verifier 或 Teacher。
+
+只有最终生成 `rollouts.parquet`、`manifest.json`，且 `quality_gate.json` 为 `passed`，才能执行
+后续命令。旧的 1,536-token pilot shard 使用不同 hash，不会被复用，应保留为失败实验记录。
 
 按顺序训练，避免同时占用磁盘和 GPU：
 

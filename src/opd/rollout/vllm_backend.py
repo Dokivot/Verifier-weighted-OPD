@@ -49,6 +49,7 @@ class VLLMRolloutBackend:
             top_k=int(self.generation_config.get("top_k", -1)),
             max_tokens=int(self.generation_config.get("max_new_tokens", 1024)),
             seed=seed,
+            skip_special_tokens=bool(self.generation_config.get("skip_special_tokens", False)),
         )
         rendered_prompts = [render_user_prompt(self._tokenizer, prompt) for prompt in prompts]
         outputs = self._llm.generate(rendered_prompts, params)

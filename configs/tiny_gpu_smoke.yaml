@@ -28,6 +28,7 @@ contamination:
 rollout:
   backend: transformers
   input_path: artifacts/tiny_gpu_smoke/data/contamination/train_clean.jsonl
+  max_prompts: null
   batch_size: 2
   shard_size: 4
   dtype: bfloat16
@@ -36,6 +37,8 @@ rollout:
     top_p: 1.0
     max_new_tokens: 128
     num_samples: 1
+  quality_gate:
+    enabled: false
 
 verification:
   prompt_path: artifacts/tiny_gpu_smoke/data/contamination/train_clean.jsonl
@@ -50,6 +53,7 @@ teacher:
 training:
   backend: transformers
   method: weighted_opd
+  max_records: null
   input_path: artifacts/tiny_gpu_smoke/data/training_views/round_0/weighted_opd.jsonl
   validation_path: artifacts/tiny_gpu_smoke/data/curated/validation.jsonl
   output_dir: artifacts/tiny_gpu_smoke/checkpoints/weighted_opd_seed42

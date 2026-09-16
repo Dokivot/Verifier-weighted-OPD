@@ -110,7 +110,8 @@ scripts/qwen_gpu_smoke.sh
 
 `tiny-gpu-smoke` 至少需要 24GB NVIDIA GPU；使用正式 Qwen3-8B/14B 的
 `qwen_gpu_smoke.sh` 至少检查 40GB-class GPU，完整实验推荐 H100 80GB。两级 GPU smoke
-均成功后才启动 15k rollout。
+均成功后才启动正式 rollout。数据准备保留 15,000 条清洗候选题，但正式实验只确定性选择前
+7,500 条，每题最多生成 3,072 response tokens。
 
 Round 0 按阶段运行：
 
@@ -136,7 +137,8 @@ scripts/train.sh configs/weighted_opd.yaml
 
 `configs/base.yaml` 已固定并静态核验模型、训练数据和评测数据的 commit SHA。远端 smoke
 仍必须验证这些 revision 在实际 AutoDL 环境可下载、Qwen3-8B/14B tokenizer 指纹一致，且许可证
-满足你的发布方式；任一验证失败都不得启动 15k rollout。
+满足你的发布方式；任一验证失败都不得启动正式 rollout。正式生成在 800 条成功样本后自动检查
+截断率，只有不高于 20% 才继续；所有训练方法最多使用同一批 7,500 条记录。
 
 污染审计不会在 benchmark 文件缺失时静默跳过；必须先运行自动下载脚本。
 `scripts/import_eval_data.sh` 仅作为无法访问 Hugging Face 时的离线备用入口。GPQA/IFEval

@@ -79,7 +79,10 @@ class HFRolloutBackend:
         generations: list[Generation] = []
         for output, prompt_tokens in zip(outputs, prompt_lengths, strict=True):
             response_ids = output[prompt_width:]
-            text = self._tokenizer.decode(response_ids, skip_special_tokens=True)
+            text = self._tokenizer.decode(
+                response_ids,
+                skip_special_tokens=bool(self.generation_config.get("skip_special_tokens", False)),
+            )
             generations.append(
                 Generation(
                     text=text,

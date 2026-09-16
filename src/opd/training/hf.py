@@ -363,6 +363,12 @@ def train_hf(config: dict[str, Any]) -> Path:
                 f"first mismatched rollout: {mismatched[0]}"
             )
         collate = _opd_collator(tokenizer)
+    max_records_value = training.get("max_records")
+    max_records = int(max_records_value) if max_records_value is not None else None
+    if max_records is not None:
+        if max_records <= 0:
+            raise ValueError("training.max_records must be positive when configured")
+        records = records[:max_records]
     random.Random(int(config["project"]["seed"])).shuffle(records)
     dataset = _ListDataset(records)
     dataloader = dependencies["DataLoader"](

@@ -39,6 +39,7 @@ contamination:
 
 rollout:
   backend: mock
+  max_prompts: null
   batch_size: 4
   shard_size: 5
   generation:
@@ -46,6 +47,8 @@ rollout:
     top_p: 1.0
     max_new_tokens: 64
     num_samples: 1
+  quality_gate:
+    enabled: false
 
 teacher:
   backend: mock
@@ -55,6 +58,7 @@ teacher:
 training:
   backend: mock
   method: weighted_opd
+  max_records: null
   input_path: artifacts/smoke/data/training_views/round_0/weighted_opd.jsonl
   validation_path: artifacts/smoke/data/curated/validation.jsonl
   output_dir: artifacts/smoke/checkpoints/weighted_opd_seed42
