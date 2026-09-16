@@ -29,7 +29,8 @@ class HFRolloutBackend:
         tokenizer_arguments: dict[str, Any] = {"trust_remote_code": False}
         if not Path(self.model_name).exists():
             tokenizer_arguments["revision"] = self.tokenizer_revision
-        self._tokenizer = AutoTokenizer.from_pretrained(
+        tokenizer_loader: Any = AutoTokenizer
+        self._tokenizer = tokenizer_loader.from_pretrained(
             self.model_name,
             **tokenizer_arguments,
         )
@@ -45,11 +46,12 @@ class HFRolloutBackend:
         }
         if not Path(self.model_name).exists():
             model_arguments["revision"] = self.model_revision
-        self._model = AutoModelForCausalLM.from_pretrained(
+        model: Any = AutoModelForCausalLM.from_pretrained(
             self.model_name,
             **model_arguments,
         )
-        self._model.eval()
+        model.eval()
+        self._model = model
 
     def generate(self, prompts: list[str], *, seed: int) -> list[Generation]:
         torch = self._torch

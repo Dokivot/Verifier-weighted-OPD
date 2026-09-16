@@ -27,14 +27,18 @@ class HFTeacherAnnotator:
         except ImportError as exc:
             raise DependencyError("HF annotation requires `pip install -e .[gpu]`") from exc
         self._torch = torch
-        self._tokenizer = AutoTokenizer.from_pretrained(
+        tokenizer_loader: Any = AutoTokenizer
+        self._tokenizer = tokenizer_loader.from_pretrained(
             self.model_name,
             revision=self.tokenizer_revision,
             trust_remote_code=False,
         )
         dtype = getattr(torch, self.dtype)
-        quantization_config = BitsAndBytesConfig(load_in_8bit=True) if self.load_in_8bit else None
-        self._model = AutoModelForCausalLM.from_pretrained(
+        quantization_config_type: Any = BitsAndBytesConfig
+        quantization_config = (
+            quantization_config_type(load_in_8bit=True) if self.load_in_8bit else None
+        )
+        model: Any = AutoModelForCausalLM.from_pretrained(
             self.model_name,
             revision=self.model_revision,
             torch_dtype=dtype,
@@ -42,7 +46,8 @@ class HFTeacherAnnotator:
             device_map="auto",
             trust_remote_code=False,
         )
-        self._model.eval()
+        model.eval()
+        self._model = model
         self.tokenizer_fingerprint = tokenizer_fingerprint(self._tokenizer)
 
     def _encode(self, prompt: str, response: str) -> tuple[list[int], list[int]]:

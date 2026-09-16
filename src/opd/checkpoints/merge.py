@@ -49,7 +49,8 @@ def merge_adapter(
     tokenizer_arguments: dict[str, Any] = {"trust_remote_code": False}
     if not base_model_path.exists():
         tokenizer_arguments["revision"] = student.get("tokenizer_revision", student.get("revision"))
-    tokenizer = AutoTokenizer.from_pretrained(student["name"], **tokenizer_arguments)
+    tokenizer_loader: Any = AutoTokenizer
+    tokenizer = tokenizer_loader.from_pretrained(student["name"], **tokenizer_arguments)
     tokenizer.save_pretrained(output)
     metadata_path = output / "merge_metadata.json"
     write_json(

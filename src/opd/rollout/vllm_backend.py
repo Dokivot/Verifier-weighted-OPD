@@ -55,6 +55,8 @@ class VLLMRolloutBackend:
         generations: list[Generation] = []
         for output in outputs:
             candidate = output.outputs[0]
+            if output.prompt_token_ids is None:
+                raise RuntimeError("vLLM did not return prompt token IDs")
             generations.append(
                 Generation(
                     text=candidate.text,
