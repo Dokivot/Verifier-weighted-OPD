@@ -96,6 +96,11 @@ class MathVerifier:
                 reference_answer=reference_answer,
                 extracted_answer=None,
                 error_type="answer_not_found",
+                details={
+                    "comparison": "not_run",
+                    "reason": "answer_not_found",
+                    "message": "",
+                },
             )
         try:
             equivalent = answers_equivalent(reference_answer, extracted)
@@ -110,7 +115,11 @@ class MathVerifier:
                 reference_answer=reference_answer,
                 extracted_answer=extracted,
                 error_type="verifier_error",
-                details={"error": str(exc)},
+                details={
+                    "comparison": "numeric_or_math_verify",
+                    "reason": "verifier_error",
+                    "message": str(exc),
+                },
             )
         return VerificationRecord(
             rollout_id=rollout_id,
@@ -122,4 +131,9 @@ class MathVerifier:
             reference_answer=reference_answer,
             extracted_answer=extracted,
             error_type=None if equivalent else "wrong_answer",
+            details={
+                "comparison": "numeric_or_math_verify",
+                "reason": "equivalent" if equivalent else "not_equivalent",
+                "message": "",
+            },
         )

@@ -38,6 +38,10 @@ class MathVerifierTest(unittest.TestCase):
         self.assertEqual(passed.status, VerificationStatus.PASS)
         self.assertEqual(failed.status, VerificationStatus.FAIL)
         self.assertEqual(unknown.status, VerificationStatus.UNKNOWN)
+        expected_detail_keys = {"comparison", "reason", "message"}
+        self.assertEqual(set(passed.details), expected_detail_keys)
+        self.assertEqual(set(failed.details), expected_detail_keys)
+        self.assertEqual(set(unknown.details), expected_detail_keys)
 
 
 if __name__ == "__main__":
