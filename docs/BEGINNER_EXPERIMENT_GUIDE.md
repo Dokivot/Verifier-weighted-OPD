@@ -260,7 +260,7 @@ scripts/remote_bootstrap.sh 2>&1 | tee bootstrap.log
 - 检查 NVIDIA GPU、CUDA 和 BF16；
 - 检查 Python 3.11/3.12；
 - 检查 vLLM、Transformers、Accelerate、bitsandbytes、LightEval 等依赖；
-- 检查 LightEval 0.9.2 与 vLLM 0.10.1.1 的兼容版本组合；
+- 检查 LightEval 0.9.2、vLLM 0.10.1.1 与 xxhash 3.8.1 的兼容版本组合；
 - 检查数据盘至少还有 70GiB；
 - 检查 GPU 至少达到 tiny smoke 的 24GB 要求。
 
@@ -706,6 +706,8 @@ benchmark 使用 Qwen3 的原生 40960 token 上下文；如果把 `benchmark.ma
 项目固定使用 LightEval 0.9.2 和 vLLM 0.10.1.1。不要单独升级 vLLM；vLLM 0.10.2 及以后
 删除了 LightEval 0.9.2 仍在调用的 `prompt_token_ids` 参数，会在模型加载完成后报
 `LLM.generate() got an unexpected keyword argument 'prompt_token_ids'`。
+同时固定 xxhash 3.8.1，因为 xxhash 4.x 不再接受 LightEval 0.9.2 传入的字符串，会在保存
+逐题 details 时报 `Strings must be encoded before hashing`。
 
 ### 16.1 先评测 Base
 

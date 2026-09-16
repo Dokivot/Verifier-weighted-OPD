@@ -24,6 +24,7 @@ def run_doctor(config: dict[str, Any] | None = None) -> dict[str, Any]:
         "lighteval",
         "more_itertools",
         "wandb",
+        "xxhash",
     ]
     modules = {name: importlib.util.find_spec(name) is not None for name in optional}
     gpu: dict[str, Any] = {"available": False, "count": 0, "names": []}

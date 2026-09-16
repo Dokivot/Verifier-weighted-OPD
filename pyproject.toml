@@ -32,6 +32,7 @@ eval = [
   "langdetect>=1.0.9",
   "math-verify>=0.7",
   "more-itertools>=10,<11",
+  "xxhash==3.8.1",
 ]
 tracking = ["wandb>=0.19"]
 dev = [
@@ -56,6 +57,7 @@ all = [
   "transformers>=4.48",
   "vllm==0.10.1.1; platform_system == 'Linux'",
   "wandb>=0.19",
+  "xxhash==3.8.1",
 ]
 
 [project.scripts]

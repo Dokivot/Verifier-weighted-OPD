@@ -40,10 +40,12 @@ required = {
     "torch",
     "transformers",
     "vllm",
+    "xxhash",
 }
 expected_versions = {
     "lighteval": "0.9.2",
     "vllm": "0.10.1.1",
+    "xxhash": "3.8.1",
 }
 print(f"python={sys.version.split()[0]} platform={platform.platform()}")
 if sys.version_info[:2] not in {(3, 11), (3, 12)}:
