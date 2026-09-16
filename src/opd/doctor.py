@@ -22,6 +22,7 @@ def run_doctor(config: dict[str, Any] | None = None) -> dict[str, Any]:
         "vllm",
         "math_verify",
         "lighteval",
+        "more_itertools",
         "wandb",
     ]
     modules = {name: importlib.util.find_spec(name) is not None for name in optional}
