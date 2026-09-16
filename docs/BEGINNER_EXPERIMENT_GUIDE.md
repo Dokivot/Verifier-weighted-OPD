@@ -697,6 +697,11 @@ uv run --no-sync opd compare \
 
 ## 16. LightEval 正式 benchmark
 
+MATH-500 和 AIME 的 LightEval 标准任务会为推理模型预留最多 32768 个生成 token。因此正式
+benchmark 使用 Qwen3 的原生 40960 token 上下文；如果把 `benchmark.max_model_length` 设为
+4096，LightEval 会在生成前因可用上下文为负数而直接失败。这个设置只影响正式 LightEval，
+内部快速评测仍使用较短上下文以节省显存和时间。
+
 ### 16.1 先评测 Base
 
 ```bash

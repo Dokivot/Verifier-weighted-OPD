@@ -165,7 +165,7 @@ benchmark:
   registry_path: eval/registry.yaml
   launcher: vllm
   dtype: bfloat16
-  max_model_length: 4096
+  max_model_length: 40960
   tensor_parallel_size: 1
   gpu_memory_utilization: 0.9
   use_chat_template: true
