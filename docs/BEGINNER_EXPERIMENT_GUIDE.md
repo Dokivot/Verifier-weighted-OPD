@@ -260,6 +260,7 @@ scripts/remote_bootstrap.sh 2>&1 | tee bootstrap.log
 - 检查 NVIDIA GPU、CUDA 和 BF16；
 - 检查 Python 3.11/3.12；
 - 检查 vLLM、Transformers、Accelerate、bitsandbytes、LightEval 等依赖；
+- 检查 LightEval 0.9.2 与 vLLM 0.10.1.1 的兼容版本组合；
 - 检查数据盘至少还有 70GiB；
 - 检查 GPU 至少达到 tiny smoke 的 24GB 要求。
 
@@ -701,6 +702,10 @@ MATH-500 和 AIME 的 LightEval 标准任务会为推理模型预留最多 32768
 benchmark 使用 Qwen3 的原生 40960 token 上下文；如果把 `benchmark.max_model_length` 设为
 4096，LightEval 会在生成前因可用上下文为负数而直接失败。这个设置只影响正式 LightEval，
 内部快速评测仍使用较短上下文以节省显存和时间。
+
+项目固定使用 LightEval 0.9.2 和 vLLM 0.10.1.1。不要单独升级 vLLM；vLLM 0.10.2 及以后
+删除了 LightEval 0.9.2 仍在调用的 `prompt_token_ids` 参数，会在模型加载完成后报
+`LLM.generate() got an unexpected keyword argument 'prompt_token_ids'`。
 
 ### 16.1 先评测 Base
 

@@ -41,14 +41,22 @@ required = {
     "transformers",
     "vllm",
 }
+expected_versions = {
+    "lighteval": "0.9.2",
+    "vllm": "0.10.1.1",
+}
 print(f"python={sys.version.split()[0]} platform={platform.platform()}")
 if sys.version_info[:2] not in {(3, 11), (3, 12)}:
     raise SystemExit("ERROR: use Python 3.11 or 3.12")
 for name in sorted(required):
     try:
-        print(f"{name}={importlib.metadata.version(name)}")
+        version = importlib.metadata.version(name)
+        print(f"{name}={version}")
     except importlib.metadata.PackageNotFoundError:
         raise SystemExit(f"ERROR: missing package {name}") from None
+    expected = expected_versions.get(name)
+    if expected is not None and version != expected:
+        raise SystemExit(f"ERROR: {name}=={expected} is required; found {version}")
 if shutil.which("lighteval") is None:
     raise SystemExit("ERROR: missing executable: lighteval")
 if not torch.cuda.is_available():
