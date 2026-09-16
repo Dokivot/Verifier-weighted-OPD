@@ -42,6 +42,9 @@ class SmokePipelineTest(unittest.TestCase):
         summary_path = root / "evaluation/weighted/smoke/summary.json"
         config["report"]["output_dir"] = str(root / "reports")
         config["report"]["summary_paths"] = [str(summary_path)]
+        config["report"]["training_runs"][0]["summary_path"] = str(
+            root / "checkpoints/weighted/training_summary.json"
+        )
         return config
 
     def test_end_to_end_and_shard_resume(self) -> None:
