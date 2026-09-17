@@ -32,6 +32,85 @@ def _annotator(config: dict[str, Any]) -> Any:
     raise ValueError(f"Unsupported teacher backend: {teacher['backend']}")
 
 
+def _validate_reusable_annotation(
+    record: TeacherAnnotationRecord,
+    *,
+    annotator: Any,
+    top_k: int,
+    source_path: Path,
+) -> None:
+    tokenizer_revision = getattr(annotator, "tokenizer_revision", None)
+    if tokenizer_revision is None and hasattr(annotator, "tokenizer"):
+        tokenizer_revision = annotator.tokenizer.revision
+    expected = {
+        "teacher_model": str(annotator.model_name),
+        "teacher_revision": str(annotator.model_revision),
+        "tokenizer_revision": str(tokenizer_revision),
+        "tokenizer_fingerprint": str(annotator.tokenizer_fingerprint),
+    }
+    for field, expected_value in expected.items():
+        actual_value = str(getattr(record, field))
+        if actual_value != expected_value:
+            raise ValueError(
+                f"Reusable Teacher annotation is incompatible at {source_path} "
+                f"for rollout {record.rollout_id}: {field}={actual_value!r}, "
+                f"expected {expected_value!r}"
+            )
+    if not record.response_token_ids:
+        raise ValueError(
+            f"Reusable Teacher annotation has no response tokens at {source_path} "
+            f"for rollout {record.rollout_id}"
+        )
+    if any(len(token_ids) != top_k for token_ids in record.topk_token_ids):
+        raise ValueError(
+            f"Reusable Teacher annotation has incompatible top-k data at {source_path} "
+            f"for rollout {record.rollout_id}; expected k={top_k}"
+        )
+
+
+def _load_reusable_annotations(
+    paths: list[Path],
+    *,
+    annotator: Any,
+    top_k: int,
+    rollouts_by_id: dict[str, RolloutRecord],
+) -> dict[str, TeacherAnnotationRecord]:
+    reusable: dict[str, TeacherAnnotationRecord] = {}
+    for path in paths:
+        source_ids: set[str] = set()
+        for row in read_records(path):
+            record = TeacherAnnotationRecord.model_validate(row)
+            if record.rollout_id in source_ids:
+                raise ValueError(
+                    f"Duplicate rollout_id {record.rollout_id!r} in reusable "
+                    f"Teacher annotation file: {path}"
+                )
+            source_ids.add(record.rollout_id)
+            if record.status != RecordStatus.SUCCESS:
+                continue
+            _validate_reusable_annotation(
+                record,
+                annotator=annotator,
+                top_k=top_k,
+                source_path=path,
+            )
+            rollout = rollouts_by_id.get(record.rollout_id)
+            if rollout is None:
+                continue
+            if record.sample_id != rollout.sample_id:
+                raise ValueError(
+                    f"Reusable Teacher annotation sample_id mismatch at {path} "
+                    f"for rollout {record.rollout_id}"
+                )
+            existing = reusable.get(record.rollout_id)
+            if existing is not None and existing != record:
+                raise ValueError(
+                    f"Conflicting reusable Teacher annotations for rollout {record.rollout_id}"
+                )
+            reusable[record.rollout_id] = record
+    return reusable
+
+
 def annotate_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
     data_dir = Path(config["paths"]["data_dir"])
     extension = config["data"].get("format", "jsonl")
@@ -46,17 +125,36 @@ def annotate_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
     metrics_path = output_dir / "job_metrics.json"
     upstream_id = verified_artifact_manifest_id(rollout_path)
     rollouts = [RolloutRecord.model_validate(row) for row in read_records(rollout_path)]
+    rollout_ids = [rollout.rollout_id for rollout in rollouts]
+    if len(set(rollout_ids)) != len(rollout_ids):
+        raise ValueError(f"Duplicate rollout_id found in Teacher input: {rollout_path}")
+    rollouts_by_id = {rollout.rollout_id: rollout for rollout in rollouts}
+    reuse_paths = [Path(path) for path in config["teacher"].get("reuse_annotation_paths", [])]
+    if any(path.resolve() == output_path.resolve() for path in reuse_paths):
+        raise ValueError("teacher.reuse_annotation_paths cannot include the output annotation file")
+    reuse_upstream_ids = [verified_artifact_manifest_id(path) for path in reuse_paths]
     annotator = _annotator(config)
+    top_k = int(config["teacher"].get("top_k", 64))
+    reusable = _load_reusable_annotations(
+        reuse_paths,
+        annotator=annotator,
+        top_k=top_k,
+        rollouts_by_id=rollouts_by_id,
+    )
     records: list[TeacherAnnotationRecord] = []
     failures = 0
     reused_shards = 0
     generated_shards = 0
+    resumed_records = 0
+    reused_annotation_records = 0
+    generated_records = 0
     shard_size = int(config["teacher"].get("shard_size", config["rollout"].get("shard_size", 200)))
     annotation_hash = stable_hash(
         {
             "teacher": config["models"]["teacher"],
             "annotation": config["teacher"],
             "rollout_checksum": file_sha256(rollout_path),
+            "reuse_annotation_checksums": {str(path): file_sha256(path) for path in reuse_paths},
         },
         length=16,
     )
@@ -77,12 +175,20 @@ def annotate_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
                 is_complete=lambda record: record.status == RecordStatus.SUCCESS,
             )
             if existing is not None:
-                records.extend(existing)
-                reused_shards += 1
-                continue
+                expected_ids = [rollout.rollout_id for rollout in rollout_shard]
+                if [record.rollout_id for record in existing] == expected_ids:
+                    records.extend(existing)
+                    reused_shards += 1
+                    resumed_records += len(existing)
+                    continue
 
             shard_records: list[TeacherAnnotationRecord] = []
             for rollout in rollout_shard:
+                reusable_record = reusable.get(rollout.rollout_id)
+                if reusable_record is not None:
+                    shard_records.append(reusable_record)
+                    reused_annotation_records += 1
+                    continue
                 started = perf_counter()
                 try:
                     if rollout.status != RecordStatus.SUCCESS:
@@ -129,6 +235,7 @@ def annotate_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
                         error=str(exc),
                     )
                 shard_records.append(record)
+                generated_records += 1
                 timer.add(records=1, teacher_tokens=record.teacher_tokens)
             write_records(part_path, [record.model_dump(mode="json") for record in shard_records])
             records.extend(shard_records)
@@ -144,14 +251,18 @@ def annotate_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
         record_count=len(records),
         success_count=len(records) - failures,
         failure_count=failures,
-        upstream_artifact_ids=[upstream_id],
+        upstream_artifact_ids=[upstream_id, *reuse_upstream_ids],
         metadata={
             "round_id": round_id,
-            "top_k": int(config["teacher"].get("top_k", 64)),
+            "top_k": top_k,
             "shard_size": shard_size,
             "shard_count": len(shard_files),
             "reused_shards": reused_shards,
             "generated_shards": generated_shards,
+            "resumed_records": resumed_records,
+            "reused_annotation_records": reused_annotation_records,
+            "generated_records": generated_records,
+            "reuse_annotation_paths": [str(path) for path in reuse_paths],
             "experiment_seed": int(config["project"]["seed"]),
         },
     )

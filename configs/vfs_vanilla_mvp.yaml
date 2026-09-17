@@ -1,0 +1,15 @@
+defaults: vfs_weighted_mvp.yaml
+
+project:
+  run_tier: resume-mvp-vanilla
+
+training_view:
+  output_name: vfs_vanilla_b50
+
+training:
+  method: vanilla_opd
+  input_path: artifacts/resume_mvp/data/training_views/round_0/vfs_vanilla_b50.parquet
+  output_dir: artifacts/resume_mvp/checkpoints/vfs_vanilla_b50_seed42
+
+evaluation:
+  output_dir: artifacts/resume_mvp/evaluation/vfs_vanilla_b50

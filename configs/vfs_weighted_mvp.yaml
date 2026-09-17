@@ -67,6 +67,13 @@ training:
 
 evaluation:
   output_dir: artifacts/resume_mvp/evaluation/vfs_weighted_b50
+  suites:
+    regression:
+      input_path: artifacts/resume_mvp/data/curated/validation.parquet
+      max_samples: 500
+    math500:
+      input_path: artifacts/resume_mvp/data/eval/math500.parquet
+      max_samples: 500
 
 benchmark:
   tasks: [math500, aime2024, ifeval]

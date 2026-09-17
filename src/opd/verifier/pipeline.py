@@ -25,7 +25,9 @@ def verify_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
         config["verification"].get("rollout_path")
         or data_dir / "rollouts" / f"round_{round_id}" / f"rollouts.{extension}"
     )
-    output_dir = data_dir / "verifications" / f"round_{round_id}"
+    output_dir = Path(
+        config["verification"].get("output_dir") or data_dir / "verifications" / f"round_{round_id}"
+    )
     output_path = output_dir / f"math.{extension}"
     prompt_manifest_id = (
         verified_manifest_id(data_dir / "manifests" / "data_prepare.json")
@@ -55,6 +57,9 @@ def verify_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
         results.append(result)
     write_records(output_path, [result.model_dump(mode="json") for result in results])
     counts = Counter(result.status.value for result in results)
+    extraction_modes = Counter(
+        str(result.details.get("extraction_mode", "unknown")) for result in results
+    )
     manifest = build_manifest(
         artifact_type="verification",
         stage="verify.math",
@@ -63,7 +68,13 @@ def verify_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
         record_count=len(results),
         success_count=len(results),
         upstream_artifact_ids=upstream_ids,
-        metadata={"round_id": round_id, "status_counts": dict(counts)},
+        metadata={
+            "round_id": round_id,
+            "verifier_name": verifier.name,
+            "verifier_version": verifier.version,
+            "status_counts": dict(counts),
+            "extraction_mode_counts": dict(extraction_modes),
+        },
     )
     save_manifest(output_dir / "manifest.json", manifest)
     return output_path

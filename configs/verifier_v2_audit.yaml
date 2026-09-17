@@ -1,0 +1,4 @@
+defaults: vfs_weighted_mvp.yaml
+
+verification:
+  output_dir: artifacts/resume_mvp/audits/verifier_v2/round_0

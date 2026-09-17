@@ -72,6 +72,80 @@ class ConfigTest(unittest.TestCase):
             "artifacts/resume_mvp/checkpoints/sft_seed42",
         )
 
+    def test_resume_mvp_ungated_reuses_teacher_annotations(self) -> None:
+        weighted = load_config("configs/vfs_weighted_mvp.yaml")
+        ungated = load_config("configs/vfs_ungated_mvp.yaml")
+
+        self.assertEqual(
+            ungated["weighting"]["verifier"],
+            {
+                "pass": 1.0,
+                "unknown": 1.0,
+                "fail": 1.0,
+            },
+        )
+        self.assertEqual(ungated["project"]["seed"], 42)
+        self.assertEqual(ungated["teacher"]["input_path"], weighted["teacher"]["input_path"])
+        self.assertEqual(
+            ungated["training_view"]["annotation_path"],
+            weighted["training_view"]["annotation_path"],
+        )
+        self.assertNotEqual(
+            ungated["training_view"]["output_name"],
+            weighted["training_view"]["output_name"],
+        )
+        self.assertNotEqual(
+            ungated["training"]["output_dir"],
+            weighted["training"]["output_dir"],
+        )
+
+    def test_resume_mvp_vanilla_reuses_selected_teacher_annotations(self) -> None:
+        weighted = load_config("configs/vfs_weighted_mvp.yaml")
+        vanilla = load_config("configs/vfs_vanilla_mvp.yaml")
+
+        self.assertEqual(vanilla["training"]["method"], "vanilla_opd")
+        self.assertEqual(vanilla["project"]["seed"], 42)
+        self.assertEqual(vanilla["teacher"]["input_path"], weighted["teacher"]["input_path"])
+        self.assertEqual(
+            vanilla["training_view"]["annotation_path"],
+            weighted["training_view"]["annotation_path"],
+        )
+        self.assertEqual(
+            vanilla["training_view"]["selection_path"],
+            weighted["training_view"]["selection_path"],
+        )
+        self.assertNotEqual(
+            vanilla["training_view"]["output_name"],
+            weighted["training_view"]["output_name"],
+        )
+
+    def test_dense_vanilla_mvp_trains_all_round_zero_rollouts_once(self) -> None:
+        config = load_config("configs/dense_vanilla_mvp.yaml")
+
+        self.assertEqual(
+            config["teacher"]["input_path"],
+            "artifacts/resume_mvp/data/rollouts/round_0/rollouts.parquet",
+        )
+        self.assertEqual(
+            config["teacher"]["reuse_annotation_paths"],
+            ["artifacts/resume_mvp/data/annotations/vfs_weighted_b50/round_0/teacher.parquet"],
+        )
+        self.assertIsNone(config["training_view"]["selection_path"])
+        self.assertEqual(config["training"]["method"], "vanilla_opd")
+        self.assertIsNone(config["training"]["max_records"])
+        self.assertEqual(config["training"]["max_steps"], 375)
+        self.assertEqual(config["training"]["gradient_accumulation_steps"], 16)
+        self.assertEqual(config["training"]["early_stopping"]["eval_steps"], 375)
+        self.assertEqual(config["training"]["early_stopping"]["patience"], 3)
+        self.assertEqual(
+            config["evaluation"]["suites"]["regression"]["input_path"],
+            "artifacts/resume_mvp/data/curated/validation.parquet",
+        )
+        self.assertEqual(
+            config["evaluation"]["suites"]["math500"]["input_path"],
+            "artifacts/resume_mvp/data/eval/math500.parquet",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

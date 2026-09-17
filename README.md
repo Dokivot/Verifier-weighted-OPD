@@ -6,6 +6,10 @@
 `Qwen2.5-1.5B-Instruct` Student 与 `Qwen2.5-Math-7B-Instruct` Teacher。
 
 完整实验设计与 GPU 预算见 [`PROJECT_PLAN.md`](PROJECT_PLAN.md)。更大规模的备用方案保存在 [`plans/`](plans/README.md)。
+数学 verifier 的文献依据、v2 设计和离线审计流程见
+[`docs/VERIFIER_DESIGN.md`](docs/VERIFIER_DESIGN.md)。
+复用已完成 Round 0 数据立即运行 vanilla OPD 的步骤见
+[`docs/VANILLA_OPD_FROM_EXISTING_ROLLOUTS.md`](docs/VANILLA_OPD_FROM_EXISTING_ROLLOUTS.md)。
 
 项目按“先完整结果、后公平基线、最后消融”推进。3,000 prompts 的首轮执行方案见
 [`docs/RESUME_MVP.md`](docs/RESUME_MVP.md)。
@@ -139,6 +143,7 @@ scripts/qwen_gpu_smoke.sh
 ```bash
 scripts/run_resume_mvp.sh
 scripts/run_resume_sft.sh
+scripts/run_dense_vanilla_mvp.sh
 ```
 
 MVP 输出统一写入 `artifacts/resume_mvp/`。完整命令、断点续跑和结果口径见
