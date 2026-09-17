@@ -2,11 +2,13 @@ benchmarks:
   math500:
     provider: lighteval
     task: lighteval|math_500|0|0
+    custom_tasks: opd.evaluation.lighteval_tasks
     primary_metric: accuracy
     role: primary_math
   aime2024:
     provider: lighteval
     task: lighteval|aime24|0|0
+    custom_tasks: opd.evaluation.lighteval_tasks
     primary_metric: accuracy
     role: hard_math
   gpqa_diamond:
@@ -17,7 +19,6 @@ benchmarks:
   ifeval:
     provider: lighteval
     task: extended|ifeval|0|0
-    custom_tasks: lighteval.tasks.extended.ifeval.main
     primary_metric: prompt_level_strict_acc
     role: capability_regression
 

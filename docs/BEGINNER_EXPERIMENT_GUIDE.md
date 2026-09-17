@@ -27,6 +27,10 @@
 - seed：只使用 `42`；
 - 正式 benchmark：MATH-500、AIME 2024、IFEval。
 
+MATH-500 与 AIME 2024 保留 LightEval 0.9.2 的数据、prompt 和指标，但最大生成长度固定为 4,096
+tokens，以适配项目的 8,192-token vLLM 上下文。不要直接使用 LightEval 默认的 32,768-token
+数学生成预算，否则在生成开始前会出现 `Context size is less than 0`。
+
 长度策略固定为：
 
 - vLLM rollout 上下文上限：8,192 tokens；

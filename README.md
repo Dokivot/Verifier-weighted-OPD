@@ -214,6 +214,11 @@ scripts/evaluate_lighteval.sh CHECKPOINT artifacts/lighteval/RUN_NAME
 
 LoRA 模型必须先用 `scripts/merge_checkpoint.sh` 合并，Base 则可直接传配置中的 Student，包装器会自动使用固定 revision。脚本通过 `opd benchmark run` 调用 LightEval，并自动写入命令、job metrics 和 checksum manifest。任务注册表位于 [`eval/registry.yaml`](eval/registry.yaml)。项目锁定 `lighteval==0.9.2`；正式运行前仍需核对 GPQA 访问权限。若设置 `LIGHEVAL_TASKS`，其值应是逗号分隔的注册表名称，例如 `math500,aime2024`。
 
+MATH-500 与 AIME 2024 使用 LightEval 原生数据、prompt 和指标，但项目通过
+`opd.evaluation.lighteval_tasks` 将最大生成长度固定为 4,096 tokens。LightEval 0.9.2 默认的
+32,768-token 数学生成预算无法放入本项目固定的 8,192-token vLLM 上下文；该覆盖属于实验协议，
+必须随结果一同报告。
+
 当前代码已通过本地 CPU 单元测试、静态检查和 mock 端到端链路；本机没有 NVIDIA GPU，
 因此真实 QLoRA、merge、vLLM 与 LightEval 成功只能由上述 AutoDL 两级 smoke 确认。详细审计见
 [`docs/AUTODL_VALIDATION.md`](docs/AUTODL_VALIDATION.md)。
