@@ -1,7 +1,8 @@
 # OPD-Lab：Verifier-First State-Budgeted OPD
 
 > 当前执行版本。固定单 seed `42`，使用 `Qwen2.5-1.5B-Instruct` 作为 Student、
-> `Qwen2.5-Math-7B-Instruct` 作为 Teacher，在有限 GPU 和 200GB 数据盘条件下完成一条
+> `Qwen2.5-Math-7B-Instruct` 作为 Teacher，在单张 RTX PRO 6000 Blackwell 96GB 和 200GB
+> 数据盘条件下完成一条
 > 可复现、可恢复、可评测的工程级 On-Policy Distillation（OPD）链路。主方法为
 > VFS-Weighted OPD：Verifier-First 状态选择与双粒度可靠性加权。
 
@@ -21,7 +22,8 @@
 - `Qwen2.5-Math-7B-Instruct` 是同一 Qwen2.5 tokenizer 家族中的数学 Teacher，Teacher 与 Student
   的 response token 可以可靠对齐；
 - Qwen2.5 没有 Qwen3 thinking/non-thinking 切换带来的长思考输出不确定性，便于控制 rollout 截断率；
-- 1.5B Student 的 QLoRA 训练和 7B Teacher annotation 适合单张 24GB–80GB GPU，适合 200GB 数据盘；
+- 1.5B Student 的 QLoRA 训练和 7B Teacher annotation 可在单张 RTX PRO 6000 Blackwell
+  96GB 上保留充足余量，适合 200GB 数据盘；
 - Student 足够小，仍保留真正的 on-policy rollout、teacher-forcing、sparse KL、Verifier、训练和
   benchmark 评测，不是仅在 `GSM8K` 上跑一个 toy demo。
 
@@ -320,10 +322,11 @@ Qwen3 rollout 与方案一 Teacher annotation 拼接。
 
 ## 11. GPU、磁盘与时间预算
 
-配置中的目标为 `40 H100 GPU hours`，硬上限为 `60 H100 GPU hours`。这是方案一的估算，不是
-保证值；每个脚本都会通过 `opd budget` 读取已有 job metrics，并在达到 hard cap 时阻止新任务。
+配置中的目标为 `40 GPU hours`，硬上限为 `60 GPU hours`。下表沿用原 H100 粗估，只用于租卡
+预算上界，不代表 RTX PRO 6000 的实测速度；实际报告必须使用本次 job metrics 记录的 GPU 型号、
+wall time 和累计 GPU hours。每个脚本都会在达到 hard cap 时阻止新任务。
 
-| 阶段 | 预计 H100 GPU 小时 |
+| 阶段 | 原 H100 粗估 GPU 小时 |
 |---|---:|
 | tiny/Qwen smoke 与稽核 | 2–5 |
 | Phase A 3k Student rollout（K=2） | 2–5 |
@@ -340,6 +343,9 @@ Qwen3 rollout 与方案一 Teacher annotation 拼接。
 成功生成的临时模型缓存和旧 benchmark 详情可以在校验 checksum 后清理。
 
 ## 12. AutoDL 执行顺序
+
+本分支必须使用 [`docs/RTX_PRO_6000_BLACKWELL.md`](docs/RTX_PRO_6000_BLACKWELL.md) 中的
+CUDA 12.8 安装方案，不得复用 A800 分支的 CUDA 12.6 虚拟环境。
 
 ```bash
 source scripts/autodl_env.sh

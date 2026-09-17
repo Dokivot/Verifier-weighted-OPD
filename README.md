@@ -130,6 +130,10 @@ make tiny-gpu-smoke
 scripts/qwen_gpu_smoke.sh
 ```
 
+`rtx-pro-6000-blackwell` 分支固定使用 PyTorch `2.7.1+cu128`、CUDA 12.8 和 vLLM
+`0.10.1.1`，并强制验证单张 RTX PRO 6000 Blackwell 96GB、SM 12.0 与真实 BF16 kernels。
+专用安装说明见 [`docs/RTX_PRO_6000_BLACKWELL.md`](docs/RTX_PRO_6000_BLACKWELL.md)。
+
 门禁通过后，优先运行隔离的简历 MVP：
 
 ```bash
@@ -140,8 +144,8 @@ scripts/run_resume_sft.sh
 MVP 输出统一写入 `artifacts/resume_mvp/`。完整命令、断点续跑和结果口径见
 [`docs/RESUME_MVP.md`](docs/RESUME_MVP.md)。
 
-`tiny-gpu-smoke` 至少需要 24GB NVIDIA GPU；方案一的 `qwen_gpu_smoke.sh` 检查 24GB-class
-GPU，完整实验推荐 24GB–80GB GPU。MVP 准备 6,000 条候选题、rollout 前 3,000 条 prompt，
+`main` 分支的 `tiny-gpu-smoke` 至少需要 24GB NVIDIA GPU；本 Blackwell 分支的 bootstrap
+只接受单张 RTX PRO 6000 96GB。MVP 准备 6,000 条候选题、rollout 前 3,000 条 prompt，
 每题生成 2 个 rollout，每个 rollout 最多生成 4,096 response tokens。
 
 ### Phase B/C：MVP 完成后再运行

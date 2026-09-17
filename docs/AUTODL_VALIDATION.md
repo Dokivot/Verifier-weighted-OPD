@@ -24,8 +24,9 @@
 - Student、Teacher、MATH-500、AIME 2024、AIME 2025 均已固定 commit revision；AutoDL 首次
   下载后仍需在 manifest 中核对实际 revision。
 - LightEval 0.9.2 的 vLLM `model_name=` 参数、chat template、逐题 details 与 IFEval 扩展任务模块。
-- AutoDL 推荐 PyTorch 2.8.0 + CUDA 12.8 基础镜像；项目 `.venv` 按锁文件使用 PyTorch 2.7.1
-  和 CUDA 12.6 runtime wheels。
+- AutoDL 推荐 PyTorch 2.8.0 + CUDA 12.8 基础镜像；项目 `.venv` 按锁文件使用官方
+  PyTorch 2.7.1+cu128 和 CUDA 12.8 runtime wheels，与 vLLM 0.10.1.1 的 CUDA 12.8
+  预编译扩展匹配。
 
 ## 已修复的阻塞问题
 
@@ -56,7 +57,8 @@ make tiny-gpu-smoke
 scripts/qwen_gpu_smoke.sh
 ```
 
-必须人工确认 CUDA/BF16、模型下载、tokenizer fingerprint、4-bit QLoRA、7B Math Teacher BF16、
+preflight 会自动确认 RTX PRO 6000 名称、SM 12.0、至少 90GiB 显存、驱动版本、CUDA 12.8、
+Torch 编译架构、vLLM 扩展、BF16/SDPA kernel 与 bitsandbytes NF4 kernel。仍需人工确认模型下载、tokenizer fingerprint、4-bit QLoRA、7B Math Teacher BF16、
 adapter merge、vLLM 重新加载、LightEval results/details、峰值显存和剩余磁盘。Dockerfile 也仅做了
 静态审查，尚未在本地构建 CUDA 镜像。
 
@@ -66,7 +68,8 @@ adapter merge、vLLM 重新加载、LightEval results/details、峰值显存和�
 gradient norm 有限、merged checkpoint 可评测，且 LightEval 两题 smoke 产生 results/details，
 才允许启动 6,000 候选、3,000 prompts 的简历 MVP。正式配置使用 8,192 context 和 4,096
 response token 上限，并在 800 条成功样本后自动检查截断率；超过 20% 会立即失败，不得继续
-Teacher annotation。完整 MVP 推荐单张 H100/A800 80GB，并始终保留至少 15GiB 数据盘空闲。
+Teacher annotation。本分支完整 MVP 使用单张 RTX PRO 6000 Blackwell 96GB，并始终保留至少
+15GiB 数据盘空闲。
 
 ## 结果解释边界
 

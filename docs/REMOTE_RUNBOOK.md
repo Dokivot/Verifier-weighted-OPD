@@ -12,15 +12,16 @@
 ## 1. 租用与磁盘
 
 - 系统：Ubuntu x86_64，Python 由 `uv` 固定为 3.11/3.12。
-- 正式 Teacher 阶段：推荐单张 24GB–80GB GPU；24GB 卡可执行方案一 smoke 和小规模正式任务，80GB 卡更适合完整 annotation。
+- 本分支只支持单张 RTX PRO 6000 Blackwell 96GB；其他 GPU 请使用 `main` 分支。
 - 数据盘：100GB 时把仓库克隆到 `/root/autodl-tmp/OPDProj`，不要放系统盘。
 - AutoDL 基础镜像推荐 PyTorch 2.8.0 + CUDA 12.8；`uv.lock` 会在 `.venv` 中安装实际使用的
-  PyTorch 2.7.1 + CUDA 12.6 runtime。preflight 会实际检查 CUDA 与 BF16。
+  PyTorch 2.7.1+cu128 与 CUDA 12.8 runtime。preflight 会检查 SM 12.0、驱动、显存、vLLM
+  扩展和真实 BF16/SDPA kernels。
 - 开始前必须提交 Git commit。正式 promotion 默认拒绝 `git_commit=unknown`。
 
 ```bash
 cd /root/autodl-tmp
-git clone YOUR_REPOSITORY_URL OPDProj
+git clone -b rtx-pro-6000-blackwell YOUR_REPOSITORY_URL OPDProj
 cd OPDProj
 git rev-parse HEAD
 git status --short
@@ -46,7 +47,9 @@ cd /root/autodl-tmp/OPDProj
 source scripts/autodl_env.sh
 ```
 
-`scripts/autodl_preflight.sh` 会拒绝错误架构、不可见 GPU、不支持 BF16、缺失依赖或数据盘剩余空间低于 70GiB 的环境。随后运行 CPU 门禁：
+`scripts/autodl_preflight.sh` 会拒绝非 RTX PRO 6000 Blackwell、非 CUDA 12.8 wheel、驱动低于
+570.26、显存不足 90GiB、缺失 SM 12.0 kernels、vLLM 扩展加载失败或数据盘剩余空间低于
+70GiB 的环境。随后运行 CPU 门禁：
 
 ```bash
 make check
@@ -67,8 +70,7 @@ make tiny-gpu-smoke
 scripts/qwen_gpu_smoke.sh
 ```
 
-该脚本会在启动前读取显存并拒绝低于 24GB-class 的 GPU。24GB 可完成门禁，完整 Teacher
-annotation 仍推荐 H100/A800 80GB。
+该脚本仍会做通用 24GB 下限检查，但本分支的 bootstrap 已提前强制要求 RTX PRO 6000 96GB。
 
 只有以下项目全部成立，才允许启动正式 MVP rollout：
 

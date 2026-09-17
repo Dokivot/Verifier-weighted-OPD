@@ -59,33 +59,32 @@ tokens，以控制显存和训练成本。不要只改其中一个长度。若�
 
 ## 3. 选择 AutoDL 实例和镜像
 
-推荐配置：
+本分支的推荐配置：
 
-- 单张 H100 80GB 或 A800 80GB；
+- 单张 RTX PRO 6000 Blackwell 96GB；
 - x86_64 Linux；
 - 数据盘建议 200GB，最低 100GB；
 - Python 3.11 或 3.12；
 - 网络可以访问 Git 仓库和 Hugging Face。
 
 如果 AutoDL 只有“PyTorch 2.8.0”和“PyTorch 2.12.1”镜像，选择 **PyTorch 2.8.0 + CUDA
-12.8**。原因不是项目直接使用镜像中的 PyTorch，而是这个镜像通常提供更成熟的 Python/CUDA
-基础环境。`scripts/remote_bootstrap.sh` 会在项目 `.venv` 中按 `uv.lock` 安装实际依赖，目前 Linux
-锁定结果是：
+12.8**。Blackwell 最低需要 CUDA 12.8；基础镜像只提供驱动兼容的系统环境，项目不会直接使用
+镜像中的 PyTorch。`scripts/remote_bootstrap.sh` 会在 `.venv` 中按 `uv.lock` 安装：
 
-- PyTorch `2.7.1`；
-- CUDA 12.6 runtime wheels；
+- PyTorch `2.7.1+cu128`；
+- CUDA 12.8 runtime wheels；
 - vLLM `0.10.1.1`；
 - LightEval `0.9.2`；
 - Transformers `4.57.6`。
 
-因此看到镜像标题写 2.8.0，而虚拟环境中显示 PyTorch 2.7.1，是正常现象。NVIDIA 驱动只需能
-向后兼容 CUDA 12.6。最终以 `autodl_preflight.sh` 的检测结果为准，不以镜像名字为准。
+因此镜像标题是 2.8.0，而虚拟环境中显示 `2.7.1+cu128` 是正常现象。不要手动安装 CUDA 12.6
+Torch，也不要单独升级 Torch；vLLM 的预编译扩展要求匹配的软件栈。详细说明见
+[`RTX_PRO_6000_BLACKWELL.md`](RTX_PRO_6000_BLACKWELL.md)。
 
 显存建议：
 
-- 24GB：只用于 tiny/Qwen smoke，不建议跑完整 MVP；
-- 40GB/48GB：可能运行，但 annotation 较慢且余量较小；
-- 80GB：正式 MVP 推荐。
+- 本分支会强制要求单张 RTX PRO 6000 Blackwell 且 PyTorch 可见显存至少 90GiB；
+- 如需 A800/H100 或 24GB smoke 环境，请使用 `main` 分支，不要绕过本分支门禁。
 
 磁盘建议：
 
@@ -109,11 +108,11 @@ git diff --check
 git add -A
 git diff --cached --stat
 git commit -m "Harden AutoDL MVP pipeline"
-git push origin main
+git push origin rtx-pro-6000-blackwell
 git rev-parse HEAD
 ```
 
-保存最后输出的 commit SHA。若分支不是 `main`，把 push 命令中的分支名换成实际分支。
+保存最后输出的 commit SHA，并确认当前分支是 `rtx-pro-6000-blackwell`。
 
 以下内容由 `.gitignore` 排除，不需要提交：`artifacts/`、`checkpoints/`、`logs/`、`backups/`、
 `bootstrap.log`、模型权重和环境快照。
@@ -144,7 +143,7 @@ tmux new -s opd
 
 ```bash
 cd /root/autodl-tmp
-git clone YOUR_REPOSITORY_URL OPDProj
+git clone -b rtx-pro-6000-blackwell YOUR_REPOSITORY_URL OPDProj
 cd OPDProj
 git rev-parse HEAD
 git status --short
@@ -225,6 +224,9 @@ print("torch CUDA runtime:", torch.version.cuda)
 print("transformers:", transformers.__version__)
 print("vllm:", vllm.__version__)
 print("CUDA available:", torch.cuda.is_available())
+print("GPU:", torch.cuda.get_device_name(0))
+print("compute capability:", torch.cuda.get_device_capability(0))
+print("compiled architectures:", torch.cuda.get_arch_list())
 PY
 ```
 
@@ -615,10 +617,12 @@ uv run --no-sync hf auth login
 
 ```text
 [ ] 本地源码已 commit/push，并保存 commit SHA
+[ ] 当前分支是 rtx-pro-6000-blackwell
 [ ] AutoDL 选择 PyTorch 2.8.0 + CUDA 12.8 基础镜像
+[ ] 租用单张 RTX PRO 6000 Blackwell 96GB
 [ ] 进入 tmux，clone 到 /root/autodl-tmp/OPDProj
 [ ] source scripts/autodl_env.sh
-[ ] remote_bootstrap 最后显示 AutoDL preflight passed
+[ ] remote_bootstrap 显示 BF16 和 bitsandbytes NF4 smoke 均 passed
 [ ] Hugging Face 登录成功
 [ ] make check 通过
 [ ] make smoke 通过
