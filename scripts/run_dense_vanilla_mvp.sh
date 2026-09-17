@@ -6,8 +6,9 @@ cd "$ROOT"
 CONFIG="${1:-configs/dense_vanilla_mvp.yaml}"
 LOG_DIR="${LOG_DIR:-logs/dense_vanilla_mvp/$(date +%Y%m%d_%H%M%S)}"
 START_STAGE="${START_STAGE:-13}"
-ADAPTER="artifacts/resume_mvp/checkpoints/dense_vanilla_b100_seed42/best"
-MERGED="artifacts/resume_mvp/merged/dense_vanilla_b100"
+EXPERIMENT_NAME="${EXPERIMENT_NAME:-dense_vanilla_full_b100}"
+ADAPTER="artifacts/resume_mvp/checkpoints/${EXPERIMENT_NAME}_seed42/best"
+MERGED="artifacts/resume_mvp/merged/${EXPERIMENT_NAME}"
 
 case "$START_STAGE" in
   13|14|20|21|22|23|24) ;;
@@ -40,7 +41,7 @@ run_logged 21 21_merge scripts/merge_checkpoint.sh "$CONFIG" "$ADAPTER" "$MERGED
 run_logged 22 22_regression scripts/evaluate.sh "$CONFIG" regression "$MERGED"
 run_logged 23 23_benchmark scripts/evaluate_lighteval.sh \
   "$MERGED" \
-  artifacts/resume_mvp/lighteval/dense_vanilla_b100 \
+  "artifacts/resume_mvp/lighteval/${EXPERIMENT_NAME}" \
   "$CONFIG"
 run_logged 24 24_base_benchmark scripts/evaluate_lighteval.sh \
   Qwen/Qwen2.5-1.5B-Instruct \

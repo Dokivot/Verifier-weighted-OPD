@@ -6,7 +6,7 @@
 
 ## 1. 先知道最终要得到什么
 
-首轮实验固定比较三个模型：
+首轮 VFS 实验固定比较三个模型：
 
 | 模型 | 用途 |
 |---|---|
@@ -23,7 +23,8 @@
 - 正式 rollout：前 3,000 道题，每题 2 个候选；
 - Teacher：只标注 VFS 在 50% Teacher-token 预算中选中的 states；
 - Sparse KL：保存 Teacher top-64 log-prob、tail mass 和 entropy；
-- 训练：4-bit QLoRA，最多 300 optimizer steps；
+- 训练：VFS 路径使用 4-bit QLoRA，最多 300 optimizer steps；如果运行全量 vanilla OPD，主配置改为
+  全参数 BF16，具体见 [`VANILLA_OPD_FROM_EXISTING_ROLLOUTS.md`](VANILLA_OPD_FROM_EXISTING_ROLLOUTS.md)；
 - seed：只使用 `42`；
 - 正式 benchmark：MATH-500、AIME 2024、IFEval。
 

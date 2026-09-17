@@ -132,6 +132,8 @@ class ConfigTest(unittest.TestCase):
         )
         self.assertIsNone(config["training_view"]["selection_path"])
         self.assertEqual(config["training"]["method"], "vanilla_opd")
+        self.assertFalse(config["training"]["qlora"])
+        self.assertEqual(config["training"]["learning_rate"], 0.000002)
         self.assertIsNone(config["training"]["max_records"])
         self.assertEqual(config["training"]["max_steps"], 375)
         self.assertEqual(config["training"]["gradient_accumulation_steps"], 16)
@@ -144,6 +146,28 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(
             config["evaluation"]["suites"]["math500"]["input_path"],
             "artifacts/resume_mvp/data/eval/math500.parquet",
+        )
+
+    def test_dense_vanilla_lora_is_a_separate_fallback(self) -> None:
+        config = load_config("configs/dense_vanilla_lora_mvp.yaml")
+        self.assertTrue(config["training"]["qlora"])
+        self.assertEqual(config["training"]["method"], "vanilla_opd")
+        self.assertNotEqual(
+            config["training"]["output_dir"],
+            load_config("configs/dense_vanilla_mvp.yaml")["training"]["output_dir"],
+        )
+        self.assertNotEqual(
+            config["training_view"]["output_name"],
+            load_config("configs/dense_vanilla_mvp.yaml")["training_view"]["output_name"],
+        )
+
+    def test_full_parameter_qwen_smoke_disables_qlora(self) -> None:
+        config = load_config("configs/qwen_full_parameter_smoke.yaml")
+        self.assertFalse(config["training"]["qlora"])
+        self.assertEqual(config["training"]["method"], "vanilla_opd")
+        self.assertEqual(
+            config["training"]["output_dir"],
+            "artifacts/qwen_gpu_smoke/checkpoints/full_parameter_seed42",
         )
 
 

@@ -24,8 +24,9 @@ def merge_adapter(
         raise FileNotFoundError(f"Adapter checkpoint not found: {adapter}")
     upstream_ids = [verified_artifact_manifest_id(adapter)]
     student = config["models"]["student"]
+    use_qlora = bool(config["training"].get("qlora", True))
     base_model_path = Path(student["name"])
-    if base_model_path.exists():
+    if use_qlora and base_model_path.exists():
         base_manifest_id = verified_artifact_manifest_id(base_model_path)
         if base_manifest_id not in upstream_ids:
             upstream_ids.append(base_manifest_id)
@@ -36,21 +37,30 @@ def merge_adapter(
         "device_map": "auto",
         "trust_remote_code": False,
     }
-    if not base_model_path.exists():
+    if use_qlora and not base_model_path.exists():
         model_arguments["revision"] = student.get("revision")
-    base_model = AutoModelForCausalLM.from_pretrained(
-        student["name"],
-        **model_arguments,
-    )
-    model = PeftModel.from_pretrained(base_model, adapter)
-    merged = model.merge_and_unload()
+    if use_qlora:
+        base_model = AutoModelForCausalLM.from_pretrained(
+            student["name"],
+            **model_arguments,
+        )
+        model = PeftModel.from_pretrained(base_model, adapter)
+        merged = model.merge_and_unload()
+    else:
+        full_model_arguments = {
+            "torch_dtype": dtype,
+            "device_map": "auto",
+            "trust_remote_code": False,
+        }
+        merged = AutoModelForCausalLM.from_pretrained(adapter, **full_model_arguments)
     output.mkdir(parents=True, exist_ok=True)
     merged.save_pretrained(output, safe_serialization=True, max_shard_size="5GB")
     tokenizer_arguments: dict[str, Any] = {"trust_remote_code": False}
-    if not base_model_path.exists():
+    tokenizer_source = adapter if not use_qlora else student["name"]
+    if use_qlora and not base_model_path.exists():
         tokenizer_arguments["revision"] = student.get("tokenizer_revision", student.get("revision"))
     tokenizer_loader: Any = AutoTokenizer
-    tokenizer = tokenizer_loader.from_pretrained(student["name"], **tokenizer_arguments)
+    tokenizer = tokenizer_loader.from_pretrained(tokenizer_source, **tokenizer_arguments)
     tokenizer.save_pretrained(output)
     metadata_path = output / "merge_metadata.json"
     write_json(
@@ -59,6 +69,7 @@ def merge_adapter(
             "base_model": student["name"],
             "base_revision": student.get("revision"),
             "adapter_path": str(adapter),
+            "parameter_update_mode": "qlora" if use_qlora else "full_parameter",
             "output_path": str(output),
             "seed": int(config["project"]["seed"]),
         },
@@ -79,6 +90,7 @@ def merge_adapter(
             "base_revision": student.get("revision"),
             "adapter_path": str(adapter),
             "output_path": str(output),
+            "parameter_update_mode": "qlora" if use_qlora else "full_parameter",
             "experiment_seed": int(config["project"]["seed"]),
         },
     )

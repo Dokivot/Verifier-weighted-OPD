@@ -70,7 +70,7 @@ weighted training view
 trajectory verifier weight + token entropy weight
         │
         ▼
-QLoRA + validation early-stop + best checkpoint
+Full-parameter OPD + validation + best checkpoint
         │
         ▼
 MATH-500 / AIME / GPQA Diamond / IFEval
@@ -89,7 +89,7 @@ MATH-500 / AIME / GPQA Diamond / IFEval
 - **公平预算**：按 estimated/actual Teacher tokens，而不是按记录数比较方法。
 - **实验缓存复用**：正式消融可共享一次 Dense annotation，再按 selection manifest 构造子集；
   线上 VFS 路径仍只标注被选 states。
-- **训练保护**：4-bit QLoRA、Accelerate、checkpoint resume、最多一轮 epoch、validation early-stop。
+- **训练保护**：全参数 BF16 主方案、独立 QLoRA 备用方案、Accelerate、checkpoint resume、最多一轮 epoch、validation 监控。
 - **独立评测**：保存逐题输出、切片指标、paired bootstrap 和 exact McNemar 结果。
 - **成本硬停止**：`opd budget` 汇总 GPU hours，达到 `60 H100h` 时阻止训练脚本继续启动。
 
@@ -132,6 +132,7 @@ make check
 make smoke
 make tiny-gpu-smoke
 scripts/qwen_gpu_smoke.sh
+scripts/qwen_full_parameter_smoke.sh
 ```
 
 `rtx-pro-6000-blackwell` 分支固定使用 PyTorch `2.7.1+cu128`、CUDA 12.8 和 vLLM
@@ -144,6 +145,8 @@ scripts/qwen_gpu_smoke.sh
 scripts/run_resume_mvp.sh
 scripts/run_resume_sft.sh
 scripts/run_dense_vanilla_mvp.sh
+# 备用：使用相同数据和 Teacher logits 的 QLoRA 对照
+scripts/run_dense_vanilla_lora_mvp.sh
 ```
 
 MVP 输出统一写入 `artifacts/resume_mvp/`。完整命令、断点续跑和结果口径见
@@ -152,6 +155,10 @@ MVP 输出统一写入 `artifacts/resume_mvp/`。完整命令、断点续跑和�
 `main` 分支的 `tiny-gpu-smoke` 至少需要 24GB NVIDIA GPU；本 Blackwell 分支的 bootstrap
 只接受单张 RTX PRO 6000 96GB。MVP 准备 6,000 条候选题、rollout 前 3,000 条 prompt，
 每题生成 2 个 rollout，每个 rollout 最多生成 4,096 response tokens。
+
+当前全量 vanilla OPD 主方案是全参数 BF16；在正式 MVP 前，先完成 QLoRA 依赖 smoke，再用
+`scripts/qwen_full_parameter_smoke.sh` 验证全参数分支。LoRA/QLoRA 备用对照使用
+`scripts/run_dense_vanilla_lora_mvp.sh`，不会覆盖主方案 artifact。
 
 ### Phase B/C：MVP 完成后再运行
 

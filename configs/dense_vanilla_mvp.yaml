@@ -1,7 +1,7 @@
 defaults: vfs_weighted_mvp.yaml
 
 project:
-  run_tier: resume-mvp-dense-vanilla
+  run_tier: resume-mvp-dense-vanilla-full
 
 teacher:
   input_path: artifacts/resume_mvp/data/rollouts/round_0/rollouts.parquet
@@ -16,15 +16,17 @@ training_view:
 
 training:
   method: vanilla_opd
+  qlora: false
   max_records: null
   input_path: artifacts/resume_mvp/data/training_views/round_0/dense_vanilla_b100.parquet
-  output_dir: artifacts/resume_mvp/checkpoints/dense_vanilla_b100_seed42
+  output_dir: artifacts/resume_mvp/checkpoints/dense_vanilla_full_b100_seed42
   max_steps: 375
   warmup_steps: 20
   save_steps: 125
+  learning_rate: 0.000002
   early_stopping:
     eval_steps: 375
     patience: 3
 
 evaluation:
-  output_dir: artifacts/resume_mvp/evaluation/dense_vanilla_b100
+  output_dir: artifacts/resume_mvp/evaluation/dense_vanilla_full_b100

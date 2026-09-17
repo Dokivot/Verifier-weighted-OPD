@@ -88,7 +88,8 @@ def _load_model(
     model_path = Path(model_config["name"])
     dtype = getattr(torch, training.get("dtype", "bfloat16"))
     quantization = None
-    if training.get("qlora", True):
+    use_qlora = bool(training.get("qlora", True))
+    if use_qlora:
         quantization = dependencies["BitsAndBytesConfig"](
             load_in_4bit=True,
             bnb_4bit_quant_type="nf4",
@@ -116,19 +117,21 @@ def _load_model(
     model = dependencies["AutoModelForCausalLM"].from_pretrained(
         model_config["name"], **model_arguments
     )
-    if training.get("qlora", True):
+    if use_qlora:
         model = dependencies["prepare_model_for_kbit_training"](model)
-    lora = training["lora"]
-    peft_config = dependencies["LoraConfig"](
-        r=int(lora["r"]),
-        lora_alpha=int(lora["alpha"]),
-        lora_dropout=float(lora["dropout"]),
-        target_modules=list(lora["target_modules"]),
-        bias="none",
-        task_type="CAUSAL_LM",
-    )
-    model = dependencies["get_peft_model"](model, peft_config)
+    if use_qlora:
+        lora = training["lora"]
+        peft_config = dependencies["LoraConfig"](
+            r=int(lora["r"]),
+            lora_alpha=int(lora["alpha"]),
+            lora_dropout=float(lora["dropout"]),
+            target_modules=list(lora["target_modules"]),
+            bias="none",
+            task_type="CAUSAL_LM",
+        )
+        model = dependencies["get_peft_model"](model, peft_config)
     if training.get("gradient_checkpointing", True):
+        model.config.use_cache = False
         model.gradient_checkpointing_enable()
     return model, tokenizer
 
@@ -340,6 +343,7 @@ def train_hf(config: dict[str, Any]) -> Path:
     dependencies = _require_gpu_dependencies()
     torch = dependencies["torch"]
     training = config["training"]
+    use_qlora = bool(training.get("qlora", True))
     dependencies["set_seed"](int(config["project"]["seed"]), device_specific=False)
     accelerator = dependencies["Accelerator"](
         gradient_accumulation_steps=int(training.get("gradient_accumulation_steps", 1)),
@@ -654,6 +658,7 @@ def train_hf(config: dict[str, Any]) -> Path:
             output_dir / "training_summary.json",
             {
                 "method": method,
+                "parameter_update_mode": "qlora" if use_qlora else "full_parameter",
                 "global_step": global_step,
                 "best_validation_score": early_state.best_score,
                 "best_step": early_state.best_step,

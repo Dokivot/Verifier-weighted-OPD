@@ -1,0 +1,16 @@
+defaults: qwen_gpu_smoke.yaml
+
+project:
+  run_tier: qwen-gpu-full-parameter-smoke
+
+training_view:
+  output_name: vanilla_opd
+
+training:
+  method: vanilla_opd
+  qlora: false
+  input_path: artifacts/qwen_gpu_smoke/data/training_views/round_0/vanilla_opd.parquet
+  output_dir: artifacts/qwen_gpu_smoke/checkpoints/full_parameter_seed42
+
+evaluation:
+  output_dir: artifacts/qwen_gpu_smoke/evaluation/full_parameter

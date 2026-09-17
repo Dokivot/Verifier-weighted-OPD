@@ -64,6 +64,9 @@ def train(config: dict[str, Any]) -> Path:
         metadata={
             "method": config["training"]["method"],
             "backend": backend,
+            "parameter_update_mode": (
+                "qlora" if config["training"].get("qlora", True) else "full_parameter"
+            ),
             "checkpoint": str(checkpoint),
             "available_record_count": available_record_count,
             "selected_record_count": selected_record_count,

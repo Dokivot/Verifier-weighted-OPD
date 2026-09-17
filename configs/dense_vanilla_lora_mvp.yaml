@@ -1,0 +1,16 @@
+defaults: dense_vanilla_mvp.yaml
+
+project:
+  run_tier: resume-mvp-dense-vanilla-lora
+
+training_view:
+  output_name: dense_vanilla_lora_b100
+
+training:
+  qlora: true
+  learning_rate: 0.00002
+  input_path: artifacts/resume_mvp/data/training_views/round_0/dense_vanilla_lora_b100.parquet
+  output_dir: artifacts/resume_mvp/checkpoints/dense_vanilla_lora_b100_seed42
+
+evaluation:
+  output_dir: artifacts/resume_mvp/evaluation/dense_vanilla_lora_b100

@@ -1,7 +1,9 @@
-# 使用现有 6,000 条 Rollout 运行全量 Vanilla OPD
+# 使用现有 6,000 条 Rollout 运行全参数 Vanilla OPD
 
 本指南使用已经生成的 Round 0 数据训练标准 Vanilla OPD。所有 6,000 条 Student rollout 都进入
 training view，Verifier 结果只用于后续分析，不参与 loss 加权；所有样本权重和 token 权重均为 `1.0`。
+当前主配置是全参数 BF16 训练，不使用 LoRA。QLoRA 仍保留为独立的备用对照，见
+`configs/dense_vanilla_lora_mvp.yaml`。
 后续 verifier-guided 设计继续保存在 [`VERIFIER_DESIGN.md`](VERIFIER_DESIGN.md)，本实验不会覆盖它。
 
 ## 1. 本次复用什么
@@ -29,6 +31,16 @@ pgrep -af 'run_resume_mvp|scripts/train.sh|accelerate launch|opd train'
 
 若有旧的 weighted OPD 进程，回到对应 tmux 窗口按 `Ctrl+C`。不要让两次训练同时占用 GPU。
 旧 checkpoint 和日志不会被删除，新实验使用完全独立的目录。
+
+正式训练前，如果这是该服务器第一次运行全参数分支，建议在已经完成的 Qwen GPU smoke 数据上
+额外验证一次全参数加载、反向传播和 checkpoint 保存：
+
+```bash
+scripts/qwen_full_parameter_smoke.sh \
+  2>&1 | tee logs/qwen_full_parameter_smoke.log
+```
+
+它不会重新生成正式 6,000 条 rollout，也不会重新计算正式 Teacher logits。
 
 ## 3. 检查三个输入文件
 
@@ -82,7 +94,7 @@ scripts/run_dense_vanilla_mvp.sh
 13 补齐 Teacher annotations
 14 构建 6,000 条 vanilla_opd training view
 20 训练一轮：6,000 / gradient_accumulation_steps 16 = 375 optimizer steps
-21 合并 LoRA adapter
+21 重新保存/整理全参数 checkpoint（不会进行 LoRA merge）
 22 运行本地 regression evaluation
 23 运行 LightEval benchmark
 24 用完全相同的协议评测未训练的 Student baseline
@@ -91,6 +103,9 @@ scripts/run_dense_vanilla_mvp.sh
 训练期间每 125 步保存一次 `latest`，但只在完整一轮的第 375 步运行验证并生成 `best`。这样最终
 合并和评测的 `best` 一定见过全部 6,000 条记录，不会因为较早验证分数持平而退回只见过部分数据的
 第 125 步 checkpoint。
+
+Stage 21 的脚本名称仍沿用历史的 `merge_checkpoint.sh`，但在全参数配置下会直接从完整模型
+checkpoint 复制/保存为可评测目录，不会加载或合并 LoRA adapter。
 
 按 `Ctrl+B`，再按 `D` 可退出 tmux 而不停止任务；使用 `tmux attach -t dense_vanilla` 返回。
 
@@ -176,14 +191,14 @@ START_STAGE=13 scripts/run_dense_vanilla_mvp.sh
 
 ```bash
 test -f \
-  artifacts/resume_mvp/checkpoints/dense_vanilla_b100_seed42/latest/checkpoint_state.json
+artifacts/resume_mvp/checkpoints/dense_vanilla_full_b100_seed42/latest/checkpoint_state.json
 ```
 
 再恢复：
 
 ```bash
 START_STAGE=20 \
-RESUME_FROM_CHECKPOINT=artifacts/resume_mvp/checkpoints/dense_vanilla_b100_seed42/latest \
+RESUME_FROM_CHECKPOINT=artifacts/resume_mvp/checkpoints/dense_vanilla_full_b100_seed42/latest \
 scripts/run_dense_vanilla_mvp.sh
 ```
 
@@ -199,6 +214,18 @@ START_STAGE=23 scripts/run_dense_vanilla_mvp.sh
 START_STAGE=24 scripts/run_dense_vanilla_mvp.sh
 ```
 
+## 备用 LoRA 对照
+
+主方案结束后，可以用完全相同的 rollout、Teacher annotations 和 training view 运行 QLoRA：
+
+```bash
+scripts/run_dense_vanilla_lora_mvp.sh \
+  2>&1 | tee logs/dense_vanilla_lora_mvp.log
+```
+
+它使用独立的 training view、checkpoint、merged model、evaluation 和 LightEval 目录，不会覆盖
+全参数结果。比较时只改变 `parameter_update_mode`，不改变数据、seed、训练步数和 benchmark。
+
 ## 8. 需要永久保留的结果
 
 ```text
@@ -206,11 +233,11 @@ configs/dense_vanilla_mvp.yaml
 logs/dense_vanilla_mvp/
 artifacts/resume_mvp/data/annotations/dense_vanilla_b100/round_0/manifest.json
 artifacts/resume_mvp/data/training_views/round_0/dense_vanilla_b100.manifest.json
-artifacts/resume_mvp/checkpoints/dense_vanilla_b100_seed42/training_summary.json
-artifacts/resume_mvp/checkpoints/dense_vanilla_b100_seed42/manifest.json
-artifacts/resume_mvp/merged/dense_vanilla_b100/manifest.json
-artifacts/resume_mvp/evaluation/dense_vanilla_b100/
-artifacts/resume_mvp/lighteval/dense_vanilla_b100/
+artifacts/resume_mvp/checkpoints/dense_vanilla_full_b100_seed42/training_summary.json
+artifacts/resume_mvp/checkpoints/dense_vanilla_full_b100_seed42/manifest.json
+artifacts/resume_mvp/merged/dense_vanilla_full_b100/manifest.json
+artifacts/resume_mvp/evaluation/dense_vanilla_full_b100/
+artifacts/resume_mvp/lighteval/dense_vanilla_full_b100/
 artifacts/resume_mvp/lighteval/base_dense_protocol/
 ```
 
