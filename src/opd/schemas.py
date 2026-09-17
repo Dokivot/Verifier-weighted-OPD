@@ -77,6 +77,26 @@ class VerificationRecord(StrictModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
+class AnnotationSelectionRecord(StrictModel):
+    rollout_id: str
+    sample_id: str
+    candidate_index: int = Field(ge=0)
+    group_type: str
+    verifier_status: VerificationStatus
+    extracted_answer: str | None = None
+    subject: str
+    difficulty: str
+    estimated_teacher_tokens: int = Field(ge=0)
+    truncated: bool
+    selected: bool
+    selection_rank: int | None = Field(default=None, ge=1)
+    selection_reason: str
+    budget_before: int | None = Field(default=None, ge=0)
+    budget_after: int | None = Field(default=None, ge=0)
+    strategy: str
+    stable_tiebreak: str
+
+
 class TeacherAnnotationRecord(StrictModel):
     rollout_id: str
     sample_id: str

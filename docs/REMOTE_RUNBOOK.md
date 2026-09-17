@@ -1,13 +1,21 @@
 # AutoDL Remote GPU Runbook
 
+> 当前执行以根目录 [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) 的推荐方案一为准：
+> `Qwen2.5-1.5B-Instruct` Student + `Qwen2.5-Math-7B-Instruct` Teacher。本文中旧的
+> 旧 Qwen3-8B/14B 方案只保存在 `plans/`，本文命令均以当前 Qwen2.5 方案为准。
+
 本手册按“先门禁、再小跑、最后正式实验”的顺序执行。所有命令都从仓库根目录运行；脚本使用 `uv run --no-sync`，因此每台新服务器必须先成功执行一次 bootstrap。
+
+当前默认正式任务是 [`RESUME_MVP.md`](RESUME_MVP.md) 的 3,000 prompts 方案。7.5k 多方法矩阵
+保留为后续 Phase B/C，不应在首轮结果产生前一次性启动。
 
 ## 1. 租用与磁盘
 
 - 系统：Ubuntu x86_64，Python 由 `uv` 固定为 3.11/3.12。
-- 正式 Teacher 阶段：推荐单张 H100 80GB；24GB 卡只用于 Qwen2.5 tiny smoke，Qwen3 smoke 至少需要 40GB-class GPU。
+- 正式 Teacher 阶段：推荐单张 24GB–80GB GPU；24GB 卡可执行方案一 smoke 和小规模正式任务，80GB 卡更适合完整 annotation。
 - 数据盘：100GB 时把仓库克隆到 `/root/autodl-tmp/OPDProj`，不要放系统盘。
-- 镜像/驱动需支持锁文件中的 PyTorch 2.9.1 + CUDA 12.8；preflight 会实际检查 CUDA 与 BF16。
+- AutoDL 基础镜像推荐 PyTorch 2.8.0 + CUDA 12.8；`uv.lock` 会在 `.venv` 中安装实际使用的
+  PyTorch 2.7.1 + CUDA 12.6 runtime。preflight 会实际检查 CUDA 与 BF16。
 - 开始前必须提交 Git commit。正式 promotion 默认拒绝 `git_commit=unknown`。
 
 ```bash
@@ -53,16 +61,16 @@ make smoke
 make tiny-gpu-smoke
 ```
 
-再用正式 Qwen3-8B/14B 做 32 条真实链路，并运行 2 条 MATH-500 LightEval：
+再用正式 Qwen2.5-1.5B/Math-7B 做 32 条真实链路，并运行 2 条 MATH-500 LightEval：
 
 ```bash
 scripts/qwen_gpu_smoke.sh
 ```
 
-该脚本会在启动前读取显存并拒绝低于 40GB-class 的 GPU。40/48GB 仅用于小规模门禁；
-7.5k 正式 Teacher annotation 仍推荐 H100/A800 80GB。
+该脚本会在启动前读取显存并拒绝低于 24GB-class 的 GPU。24GB 可完成门禁，完整 Teacher
+annotation 仍推荐 H100/A800 80GB。
 
-只有以下项目全部成立，才允许启动正式 7.5k rollout：
+只有以下项目全部成立，才允许启动正式 MVP rollout：
 
 1. `artifacts/qwen_gpu_smoke/` 下各阶段存在 `manifest.json` 和 `job_metrics.json`；
 2. rollout/annotation 无批量失败，Teacher 与 Student tokenizer fingerprint 一致；
@@ -72,101 +80,70 @@ scripts/qwen_gpu_smoke.sh
 
 失败时保留整个 `artifacts/qwen_gpu_smoke/`，不要直接扩容重跑正式实验。
 
-## 4. Round 0
+## 4. 简历 MVP
 
-数据和固定 benchmark 会从 Hugging Face 指定 revision 自动获取，无需手工制作文件：
-
-```bash
-scripts/prepare_data.sh configs/data.yaml
-scripts/fetch_eval_data.sh configs/main.yaml
-scripts/audit_contamination.sh configs/main.yaml
-uv run --no-sync opd audit sparse-kl \
-  --output artifacts/audits/sparse_kl.json \
-  --config configs/main.yaml
-```
-
-共享一次 Base on-policy 数据：
+数据和固定 benchmark 会从 Hugging Face 指定 revision 自动获取，无需手工制作文件。GPU 门禁
+通过后直接运行：
 
 ```bash
-scripts/generate_rollouts.sh configs/rollout.yaml 0
-cat artifacts/data/rollouts/round_0/quality_gate.json
-scripts/verify.sh configs/main.yaml 0
-scripts/annotate_teacher.sh configs/teacher.yaml 0
-scripts/build_training_views.sh configs/main.yaml 0
+set -o pipefail
+scripts/run_resume_mvp.sh
 ```
 
-数据准备仍保留 15,000 条清洗候选题；rollout 和每种训练方法只使用固定前 7,500 条。生成上限为
-3,072 response tokens，共 38 个 shard。程序会在累计 800 条成功样本时检查截断率：
+主方法和 Base benchmark 完成后运行 SFT：
+
+```bash
+scripts/run_resume_sft.sh
+```
+
+MVP 使用 6,000 条候选题、固定前 3,000 条 rollout，每题两个候选，vLLM context 为 8,192，
+生成上限为 4,096 response tokens；Teacher/训练使用前 4,096 个总 tokens。程序会在累计 800 条
+成功样本时检查截断率：
 
 - `collecting`：尚未到 800 条；
 - `passed`：截断率不高于 20%，程序继续完成剩余数据；
 - `failed`：程序自动终止，禁止继续 Verifier 或 Teacher。
 
-只有最终生成 `rollouts.parquet`、`manifest.json`，且 `quality_gate.json` 为 `passed`，才能执行
-后续命令。旧的 1,536-token pilot shard 使用不同 hash，不会被复用，应保留为失败实验记录。
+只有最终生成 `rollouts.parquet`、`manifest.json`，且 `quality_gate.json` 为 `passed`，脚本才会
+进入后续阶段。旧的 1,536-token pilot shard 使用不同 hash，不会被复用，应保留为失败实验记录。
 
-按顺序训练，避免同时占用磁盘和 GPU：
+若任务失败，可按阶段恢复，例如从 Teacher annotation 开始：
 
 ```bash
-scripts/train.sh configs/sft.yaml
-scripts/train.sh configs/vanilla_opd.yaml
-scripts/train.sh configs/verifier_opd.yaml
-scripts/train.sh configs/confidence_opd.yaml
-scripts/train.sh configs/weighted_opd.yaml
+START_STAGE=13 scripts/run_resume_mvp.sh
 ```
 
-训练中断后，在对应配置的 `training.resume_from_checkpoint` 指向 `.../latest` 再运行同一脚本。checkpoint 保存 optimizer、scheduler、随机状态、epoch/batch cursor 和完整 history，不会从数据开头重复训练。
+阶段号和检查项见 [`RESUME_MVP.md`](RESUME_MVP.md)。训练中断后设置：
+
+```bash
+START_STAGE=20 \
+RESUME_FROM_CHECKPOINT=artifacts/resume_mvp/checkpoints/vfs_weighted_b50_seed42/latest \
+scripts/run_resume_mvp.sh
+```
+
+Phase B/C 的 7.5k 多方法命令保留在 [`PROJECT_PLAN.md`](../PROJECT_PLAN.md)，MVP 完成前不要执行。
 
 ## 5. Round 1
 
-只有 Vanilla 或 Weighted 不差于 SFT 且剩余预算不少于 20 H100h 时继续。两条分支使用隔离的数据目录，不会互相覆盖。
-
-先合并 Round 0：
-
-```bash
-scripts/merge_checkpoint.sh configs/vanilla_opd.yaml \
-  checkpoints/vanilla_opd_seed42/best \
-  artifacts/merged/vanilla_opd_round0
-scripts/merge_checkpoint.sh configs/weighted_opd.yaml \
-  checkpoints/weighted_opd_seed42/best \
-  artifacts/merged/weighted_opd_round0
-```
-
-Vanilla Round 1：
-
-```bash
-scripts/generate_rollouts.sh configs/round1_vanilla_opd.yaml 1
-scripts/verify.sh configs/round1_vanilla_opd.yaml 1
-scripts/annotate_teacher.sh configs/round1_vanilla_opd.yaml 1
-uv run --no-sync opd data build-view --round 1 --method vanilla-opd \
-  --config configs/round1_vanilla_opd.yaml
-scripts/train.sh configs/round1_vanilla_opd.yaml
-```
-
-Weighted Round 1：
-
-```bash
-scripts/generate_rollouts.sh configs/round1_weighted_opd.yaml 1
-scripts/verify.sh configs/round1_weighted_opd.yaml 1
-scripts/annotate_teacher.sh configs/round1_weighted_opd.yaml 1
-uv run --no-sync opd data build-view --round 1 --method weighted-opd \
-  --config configs/round1_weighted_opd.yaml
-scripts/train.sh configs/round1_weighted_opd.yaml
-```
+首轮不运行 Round 1。先完成 Base、SFT、VFS-Weighted B50，再补 Random-B50 和 Dense-B100。
+只有等预算主比较、artifact 和成本报告完整且剩余预算不少于 15 H100h 时，才为最佳方法新增
+隔离的 Round 1 配置；不要复用旧的 Vanilla/Weighted Round 1 配置。
 
 ## 6. 正式评测
 
-先合并 adapter，再分别写入独立输出目录：
+MVP 脚本会自动合并 adapter 并分别写入独立输出目录。以下手工命令只用于 Phase B/C：
 
 ```bash
 scripts/merge_checkpoint.sh configs/sft.yaml checkpoints/sft_seed42/best artifacts/merged/sft
-scripts/merge_checkpoint.sh configs/vanilla_opd.yaml checkpoints/vanilla_opd_seed42/best artifacts/merged/vanilla
-scripts/merge_checkpoint.sh configs/weighted_opd.yaml checkpoints/weighted_opd_seed42/best artifacts/merged/weighted
+scripts/merge_checkpoint.sh configs/dense_opd.yaml checkpoints/dense_b100_seed42/best artifacts/merged/dense_b100
+scripts/merge_checkpoint.sh configs/random_budget_b50.yaml checkpoints/random_b50_seed42/best artifacts/merged/random_b50
+scripts/merge_checkpoint.sh configs/vfs_b50.yaml checkpoints/vfs_b50_seed42/best artifacts/merged/vfs_b50
 
-scripts/evaluate_lighteval.sh Qwen/Qwen3-8B artifacts/lighteval/base
+scripts/evaluate_lighteval.sh Qwen/Qwen2.5-1.5B-Instruct artifacts/lighteval/base
 scripts/evaluate_lighteval.sh artifacts/merged/sft artifacts/lighteval/sft
-scripts/evaluate_lighteval.sh artifacts/merged/vanilla artifacts/lighteval/vanilla
-scripts/evaluate_lighteval.sh artifacts/merged/weighted artifacts/lighteval/weighted
+scripts/evaluate_lighteval.sh artifacts/merged/dense_b100 artifacts/lighteval/dense_b100
+scripts/evaluate_lighteval.sh artifacts/merged/random_b50 artifacts/lighteval/random_b50
+scripts/evaluate_lighteval.sh artifacts/merged/vfs_b50 artifacts/lighteval/vfs_b50
 ```
 
 包装器已按 LightEval 0.9.2 使用 `model_name=`、chat template、逐题 details，并通过 `lighteval.tasks.extended.ifeval.main` 注册 IFEval。GPQA 首次下载可能要求先在 Hugging Face 接受条款并执行 `uv run --no-sync hf auth login`。
@@ -197,7 +174,7 @@ tar -czf opd-metadata-$(date +%Y%m%d-%H%M).tar.gz \
 
 ## 8. 停止规则
 
-- 达到 90 H100h 后只完成必要评测；达到 110 H100h 不再启动新训练。
+- 达到 40 H100h 后只完成必要评测；达到 60 H100h 不再启动新训练。
 - 连续三次 validation 提升低于 0.005 时 early-stop。
 - NaN/Inf、持续 OOM、输出长度变化超过 30%、GPQA/IFEval 回退超过 2 个百分点时暂停。
 - 每阶段后执行 `uv run --no-sync opd budget --config configs/main.yaml` 并备份新增 artifacts。

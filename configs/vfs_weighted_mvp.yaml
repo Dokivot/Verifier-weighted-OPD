@@ -1,0 +1,72 @@
+defaults: main.yaml
+
+project:
+  run_tier: resume-mvp
+
+paths:
+  artifact_dir: artifacts/resume_mvp
+  data_dir: artifacts/resume_mvp/data
+  checkpoint_dir: artifacts/resume_mvp/checkpoints
+  report_dir: artifacts/resume_mvp/reports
+
+data:
+  counts:
+    smoke: 128
+    validation: 1000
+    train: 6000
+
+contamination:
+  train_path: artifacts/resume_mvp/data/curated/train.parquet
+  eval_paths:
+    - artifacts/resume_mvp/data/eval/math500.parquet
+    - artifacts/resume_mvp/data/eval/aime_2024.parquet
+    - artifacts/resume_mvp/data/eval/aime_2025.parquet
+
+rollout:
+  input_path: artifacts/resume_mvp/data/contamination/train_clean.parquet
+  max_prompts: 3000
+  generation:
+    num_samples: 2
+    max_new_tokens: 4096
+
+verification:
+  prompt_path: artifacts/resume_mvp/data/contamination/train_clean.parquet
+  rollout_path: artifacts/resume_mvp/data/rollouts/round_0/rollouts.parquet
+
+annotation_selection:
+  strategy: vfs
+  budget_ratio: 0.5
+  rollout_path: artifacts/resume_mvp/data/rollouts/round_0/rollouts.parquet
+  verification_path: artifacts/resume_mvp/data/verifications/round_0/math.parquet
+  prompt_path: artifacts/resume_mvp/data/contamination/train_clean.parquet
+  output_dir: artifacts/resume_mvp/data/annotation_selection/vfs_weighted_b50/round_0
+
+teacher:
+  input_path: artifacts/resume_mvp/data/annotation_selection/vfs_weighted_b50/round_0/selected.parquet
+  output_dir: artifacts/resume_mvp/data/annotations/vfs_weighted_b50/round_0
+
+training_view:
+  rollout_path: artifacts/resume_mvp/data/rollouts/round_0/rollouts.parquet
+  verification_path: artifacts/resume_mvp/data/verifications/round_0/math.parquet
+  annotation_path: artifacts/resume_mvp/data/annotations/vfs_weighted_b50/round_0/teacher.parquet
+  selection_path: artifacts/resume_mvp/data/annotation_selection/vfs_weighted_b50/round_0/selected.parquet
+  output_dir: artifacts/resume_mvp/data/training_views/round_0
+  output_name: vfs_weighted_b50
+
+training:
+  method: weighted_opd
+  max_records: null
+  input_path: artifacts/resume_mvp/data/training_views/round_0/vfs_weighted_b50.parquet
+  validation_path: artifacts/resume_mvp/data/curated/validation.parquet
+  output_dir: artifacts/resume_mvp/checkpoints/vfs_weighted_b50_seed42
+  max_steps: 300
+  warmup_steps: 20
+  save_steps: 100
+  early_stopping:
+    eval_steps: 100
+
+evaluation:
+  output_dir: artifacts/resume_mvp/evaluation/vfs_weighted_b50
+
+benchmark:
+  tasks: [math500, aime2024, ifeval]

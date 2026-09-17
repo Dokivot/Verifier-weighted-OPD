@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from opd.artifacts import build_manifest, save_manifest, verified_manifest_id
+from opd.artifacts import build_manifest, save_manifest, verified_artifact_manifest_id
 from opd.schemas import (
     RecordStatus,
     RolloutRecord,
@@ -18,16 +18,33 @@ from opd.training.weighting import confidence_weights, verifier_weight
 def build_training_view(config: dict[str, Any], *, round_id: int, method: str) -> Path:
     data_dir = Path(config["paths"]["data_dir"])
     extension = config["data"].get("format", "jsonl")
-    rollout_path = data_dir / "rollouts" / f"round_{round_id}" / f"rollouts.{extension}"
-    verification_path = data_dir / "verifications" / f"round_{round_id}" / f"math.{extension}"
-    annotation_path = data_dir / "annotations" / f"round_{round_id}" / f"teacher.{extension}"
-    output_dir = data_dir / "training_views" / f"round_{round_id}"
-    output_path = output_dir / f"{method}.{extension}"
+    view_config = config.get("training_view", {})
+    rollout_path = Path(
+        view_config.get("rollout_path")
+        or data_dir / "rollouts" / f"round_{round_id}" / f"rollouts.{extension}"
+    )
+    verification_path = Path(
+        view_config.get("verification_path")
+        or data_dir / "verifications" / f"round_{round_id}" / f"math.{extension}"
+    )
+    annotation_path = Path(
+        view_config.get("annotation_path")
+        or data_dir / "annotations" / f"round_{round_id}" / f"teacher.{extension}"
+    )
+    selection_path_value = view_config.get("selection_path")
+    selection_path = Path(selection_path_value) if selection_path_value else None
+    output_dir = Path(
+        view_config.get("output_dir") or data_dir / "training_views" / f"round_{round_id}"
+    )
+    output_name = str(view_config.get("output_name") or method)
+    output_path = output_dir / f"{output_name}.{extension}"
     upstream_ids = [
-        verified_manifest_id(data_dir / "rollouts" / f"round_{round_id}" / "manifest.json"),
-        verified_manifest_id(data_dir / "verifications" / f"round_{round_id}" / "manifest.json"),
-        verified_manifest_id(data_dir / "annotations" / f"round_{round_id}" / "manifest.json"),
+        verified_artifact_manifest_id(rollout_path),
+        verified_artifact_manifest_id(verification_path),
+        verified_artifact_manifest_id(annotation_path),
     ]
+    if selection_path is not None:
+        upstream_ids.append(verified_artifact_manifest_id(selection_path))
 
     rollouts = {
         item.rollout_id: item
@@ -46,7 +63,17 @@ def build_training_view(config: dict[str, Any], *, round_id: int, method: str) -
         )
         if item.status == RecordStatus.SUCCESS
     }
+    selected_ids = (
+        {
+            item.rollout_id
+            for item in (RolloutRecord.model_validate(row) for row in read_records(selection_path))
+        }
+        if selection_path is not None
+        else None
+    )
     common_ids = sorted(rollouts.keys() & verifications.keys() & annotations.keys())
+    if selected_ids is not None:
+        common_ids = [rollout_id for rollout_id in common_ids if rollout_id in selected_ids]
     weighting = config["weighting"]
     vocab_size = int(config["models"].get("vocab_size", 256))
     max_length = int(config["training"].get("max_length", 2048))
@@ -121,7 +148,8 @@ def build_training_view(config: dict[str, Any], *, round_id: int, method: str) -
             "zero_weight_records": sum(record.verifier_weight == 0 for record in records),
             "length_filtered_records": length_filtered,
             "max_length": max_length,
+            "selection_path": str(selection_path) if selection_path else None,
         },
     )
-    save_manifest(output_dir / f"{method}.manifest.json", manifest)
+    save_manifest(output_dir / f"{output_name}.manifest.json", manifest)
     return output_path

@@ -13,6 +13,7 @@ uv run --no-sync python -m opd data prepare --config "$CONFIG"
 uv run --no-sync python -m opd data audit-contamination --config "$CONFIG"
 uv run --no-sync python -m opd rollout generate --round 0 --config "$CONFIG"
 uv run --no-sync python -m opd verify math --round 0 --config "$CONFIG"
+uv run --no-sync python -m opd data select-annotations --round 0 --config "$CONFIG"
 uv run --no-sync python -m opd teacher annotate --round 0 --config "$CONFIG"
 uv run --no-sync python -m opd data build-view \
   --round 0 --method weighted-opd --config "$CONFIG"

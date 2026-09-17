@@ -1,0 +1,16 @@
+defaults: vfs_b50.yaml
+
+annotation_selection:
+  strategy: verifier_filtered
+  output_dir: artifacts/data/annotation_selection/verifier_filtered_b50/round_0
+
+training_view:
+  selection_path: artifacts/data/annotation_selection/verifier_filtered_b50/round_0/selected.parquet
+  output_name: verifier_filtered_b50
+
+training:
+  input_path: artifacts/data/training_views/round_0/verifier_filtered_b50.parquet
+  output_dir: checkpoints/verifier_filtered_b50_seed42
+
+evaluation:
+  output_dir: artifacts/evaluation/verifier_filtered_b50

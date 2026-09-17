@@ -50,6 +50,9 @@ rollout:
   quality_gate:
     enabled: false
 
+annotation_selection:
+  enabled: false
+
 teacher:
   backend: mock
   top_k: 4

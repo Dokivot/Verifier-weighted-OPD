@@ -1,765 +1,426 @@
-# OPD-Lab 最小可信执行方案
+# OPD-Lab：Verifier-First State-Budgeted OPD
 
-> 当前执行版本。目标是在 **60–110 H100 GPU 小时**内，使用固定单 seed 完成一个具备完整数据、训练、评测和复现链路的 8B OPD 简历项目。
+> 当前执行版本。固定单 seed `42`，使用 `Qwen2.5-1.5B-Instruct` 作为 Student、
+> `Qwen2.5-Math-7B-Instruct` 作为 Teacher，在有限 GPU 和 200GB 数据盘条件下完成一条
+> 可复现、可恢复、可评测的工程级 On-Policy Distillation（OPD）链路。主方法为
+> VFS-Weighted OPD：Verifier-First 状态选择与双粒度可靠性加权。
 
-备用方案：
+旧的 Qwen3-8B/14B 大规模设计仍保存在 [`plans/`](plans/README.md)，仅作为备用升级方向，
+不与本方案的 artifact 混用。
 
-- [推荐完整版：300–500 H100 GPU 小时](plans/PROJECT_PLAN_RECOMMENDED.md)
-- [研究扩展版：600–1000 H100 GPU 小时](plans/PROJECT_PLAN_RESEARCH_SCALE.md)
-- [方案选择和升级条件](plans/README.md)
+## 1. 先看结论
 
-## 1. 项目要解决什么问题
+### 1.1 研究问题
 
-### 1.1 项目名称
+在相同 Student rollout 和实际 Teacher token 预算下，先执行数学验证、再按同题多 rollout
+状态选择 Teacher annotation，是否比随机预算选择和简单 verifier 过滤取得更好的质量—成本结果？
 
-**Budget-Aware Verifier- and Confidence-Weighted On-Policy Distillation for an 8B Reasoning LLM**
+### 1.2 为什么选择方案一
 
-中文名称：**面向 8B 推理模型的预算感知、验证器与置信度加权在线策略蒸馏**。
+- `Qwen2.5-1.5B-Instruct` 比当前的 Qwen3-8B 更弱，MATH-500 不容易出现“基线已经接近上限”的问题；
+- `Qwen2.5-Math-7B-Instruct` 是同一 Qwen2.5 tokenizer 家族中的数学 Teacher，Teacher 与 Student
+  的 response token 可以可靠对齐；
+- Qwen2.5 没有 Qwen3 thinking/non-thinking 切换带来的长思考输出不确定性，便于控制 rollout 截断率；
+- 1.5B Student 的 QLoRA 训练和 7B Teacher annotation 适合单张 24GB–80GB GPU，适合 200GB 数据盘；
+- Student 足够小，仍保留真正的 on-policy rollout、teacher-forcing、sparse KL、Verifier、训练和
+  benchmark 评测，不是仅在 `GSM8K` 上跑一个 toy demo。
 
-### 1.2 核心问题
+### 1.3 重要边界
 
-> 在相同 Student、训练 token 和 Teacher annotation 预算下，使用数学 Verifier 过滤样本，并根据 Teacher 置信度调整 token loss，能否比 SFT 和等权 Vanilla OPD 获得更好的数学推理质量—成本表现？
+本方案只使用一个训练 seed。paired bootstrap 和 McNemar test 只能描述 benchmark 题目层面的
+不确定性，不能证明跨 seed 的训练稳定性；最终报告必须明确这个限制。
 
-### 1.3 为什么它不是 toy project
+本项目不把 entropy weighting、verifier gating 或 selective KD 声称为原创。这些方向已有
+Entropy-Aware OPD、RG-OPD/OPDVR 和 Selective KD。完整检索与差异见
+[`docs/OPD_INNOVATION_REVIEW.md`](docs/OPD_INNOVATION_REVIEW.md)。
 
-即使控制 GPU 规模，项目仍然保留完整的工程和实验链路：
+### 1.4 三个项目创新点
 
-- 使用 8B Student 和 14B Teacher；
-- 准备 15k 真实数学问题候选池，并在固定 token 预算下使用其中 7.5k 条正式训练；
-- rollout 来自当前 Student，符合 on-policy 定义；
-- Teacher 在 Student response 上执行 teacher-forcing annotation；
-- 使用确定性的 Math-Verify，而非只依赖 LLM judge；
-- 比较 Base、SFT、Vanilla OPD 和改进 OPD；
-- 所有方法使用同一个预先固定的 seed，并通过逐题配对统计、多个 benchmark 和完整训练曲线增强结论可信度；
-- 使用独立 validation early-stop 和正式 benchmark；
-- 记录 Teacher tokens、GPU hours、数据 lineage 和失败案例；
-- 所有大任务支持分片、恢复和重复执行。
+1. **Verifier-First State Acquisition**：Teacher forward 前完成同题多 rollout 分组与预算选择；
+2. **Dual-Granularity Reliability Weighting**：组合 trajectory verifier 权重与 token entropy 权重；
+3. **Cost-Aware Reproducible OPD System**：sparse logits、可恢复 shards、artifact lineage、真实
+   Teacher tokens/GPU hours 与质量—成本评测。
 
-## 2. 控制范围
+第一项是主要研究假设，后两项是已有思想的工程化组合与系统贡献。简历使用“项目创新”或
+“系统设计贡献”，不使用“全球首次提出”。
 
-### 2.1 当前只做数学推理
+## 2. 固定模型与版本
 
-第一版不加入代码、工具调用和通用对话训练。数学任务具有现成训练集、标准答案和自动 verifier，可以用较少 GPU 时间形成可信结论。
-
-项目仍然使用 `GPQA Diamond` 和 `IFEval` 做外部分布和通用能力回归，检查数学训练是否伤害其他能力。
-
-### 2.2 当前不做的内容
-
-- 不自行生成新题目；
-- 不训练 Reward Model；
-- 不运行 32B Teacher；
-- 不做 60k–100k prompts；
-- 不运行多 seed 大规模复现实验；
-- 不做超过 2 轮 OPD；
-- 不引入 Kubernetes、Ray、Airflow 或微服务；
-- 不做全参数 8B 训练；
-- 不使用完整 vocabulary logits 作为主存储格式。
-
-这些内容已经保存在备用方案中，当前阶段不消耗算力实现。
-
-## 3. 固定模型配置
-
-### 3.1 主模型
-
-| 角色 | 配置 | 用途 |
+| 角色 | 模型 | 用途 |
 |---|---|---|
-| Student | `Qwen/Qwen3-8B`，revision `b968826d9c46dd6066d109eabc6255188de91218` | rollout、QLoRA 训练和最终评测 |
-| Teacher | `Qwen/Qwen3-14B`，revision `40c069824f4251a91eefaf281ebe4c544efd3e18` | Teacher-forcing annotation |
+| Student | `Qwen/Qwen2.5-1.5B-Instruct` | rollout、QLoRA、最终评测 |
+| Teacher | `Qwen/Qwen2.5-Math-7B-Instruct` | 在 Student response 上 teacher-forcing annotation |
+| 开发 Student | `Qwen/Qwen2.5-0.5B-Instruct` | tiny GPU smoke，不进入最终结果 |
+| 开发 Teacher | `Qwen/Qwen2.5-1.5B-Instruct` | tiny GPU smoke，不进入最终结果 |
 
-模型 repository 与 revision 已在 `configs/base.yaml` 固定，并通过 Hugging Face 元数据静态核验。
-首次远端 smoke 仍要确认 revision 可实际下载，并以 tokenizer fingerprint 确认 Student 与 Teacher
-使用相同 vocabulary；未通过时禁止扩展到正式数据量。
+Student revision 已固定为 `989aa7980e4cf806f80c7fef2b1adb7bc71aa306`。Teacher revision 已固定为
+`ef9926d75ab1d54532f6a30dd5e760355eb9aa4d`。AutoDL smoke 必须确认两个 revision 可下载且
+Student/Teacher tokenizer fingerprint 一致；不一致时不得开始正式 rollout。
 
-### 3.2 开发模型
+训练使用 4-bit QLoRA，计算 dtype 优先 `bfloat16`。Student rollout 使用 vLLM，Teacher
+annotation 使用 Transformers teacher-forcing；两者分成不同 job，不让 Teacher 参与反向传播。
 
-本地和低价 GPU 开发使用 0.5B–1.5B Student 与 3B–7B Teacher。开发模型只验证工程正确性，不进入最终主表。
+## 3. 数据方案
 
-### 3.3 训练方式
+### 3.1 训练数据
 
-- Student：4-bit QLoRA；
-- 计算 dtype：优先 bf16；
-- Teacher：bf16 或 8-bit 推理，根据显存决定；
-- Student rollout：vLLM；
-- Teacher annotation：Transformers teacher-forcing；
-- 每轮最多训练 1 epoch，并启用 early stopping。
+主数据集是 Hugging Face `open-r1/OpenR1-Math-220k` 的 `default`/`train`，使用配置中固定的
+dataset revision。直接复用其中的题目、参考答案和 solution；不需要手工合成训练题。
 
-## 4. 固定数据方案
-
-### 4.1 训练数据
-
-使用 `open-r1/OpenR1-Math-220k` 的 `default` 子集，revision
-`e4e141ec9dea9f8326f4d347be56105859b2bd68`，不自行合成题目。
-
-数据用途：
+字段用途：
 
 | 字段 | 用途 |
 |---|---|
 | `problem` | Student rollout prompt |
-| `solution` / verified generation | SFT baseline target |
-| `answer` | Math verifier 标准答案 |
-| `problem_type` | 分领域采样和结果切片 |
-| `source` | 数据溯源和污染审计 |
-| correctness 字段 | 检查本项目 verifier 的一致性 |
+| `solution` | SFT target 或质量分析 |
+| `answer` | Math-Verify 的标准答案 |
+| `problem_type`、`level` | 分题型和难度统计 |
+| `source` | 数据溯源、污染审计和失败分析 |
 
-### 4.2 固定规模
+### 3.2 固定规模
 
 | Split | 数量 | 用途 |
 |---|---:|---|
-| smoke | 128 | 完整 pipeline 快速验证 |
-| train | 15,000 | 清洗后的候选池；正式 SFT 和 OPD 均取固定前 7,500 条 |
-| validation | 1,000 | early-stop、checkpoint selection |
-| regression | 500 | 高频轻量回归，可与 validation 重叠但固定 |
+| smoke | 128 | CPU/tiny/GPU 完整链路检查 |
+| validation | 1,000 | early-stop、checkpoint 选择和回归 |
+| train candidate | 15,000 | 清洗、去重、污染审计后的候选池 |
+| Round 0 prompt | 7,500 | 所有主实验共享，每题生成 2 个 on-policy states |
+| Round 1 prompt | 7,500 | 由 Round 0 最佳 Student 重新生成 |
 
-选择 train/validation 前，先从候选数据中移除与最终 benchmark 疑似重复的样本。
+脚本通过固定 seed 先打乱再切分；正式 rollout 只取清洗后 train 的前 7,500 条。所有方法
+共享同一批 prompt、同一 Student revision 和同一采样配置，不能为某个方法单独增加数据。
+Phase A 的隔离配置把 candidate pool 缩为 6,000、rollout 缩为 3,000；上述 15k/7.5k 数字仅用于
+Phase B/C 完整矩阵。
 
-### 4.3 最终 Benchmark
+### 3.3 数据污染
 
-最小可信版固定使用：
+在 rollout 前执行 MATH-500、AIME 2024、AIME 2025 的 exact hash 和近重复审计。疑似重复
+样本写入 quarantine 并记录数量、阈值和来源，不静默删除。benchmark 只用于最终评测，不能
+用于训练或反复调参。
+
+### 3.4 是否合成数据
+
+不合成新题目。OPD 必须自动产生两类运行时数据：
+
+1. 当前 Student 的 on-policy response；
+2. Teacher 对这些 response 的 token 分布、entropy 和 top-k log-prob。
+
+这两类数据由脚本生成并写入带 manifest 的 Parquet；它们不是人工合成训练集。
+
+## 4. 端到端数据流
+
+```text
+OpenR1-Math-220k
+        │
+        ▼
+prepare → split → decontaminate
+        │
+        ▼
+15k clean candidate / fixed 7.5k prompt manifest
+        │
+        ▼
+Round 0: 1.5B Student rollout × 2
+        │
+        ▼
+Math-Verify + 同题状态分组
+        │
+        ▼
+fixed Teacher-token budget selection
+        │
+        ▼
+7B Math Teacher teacher-forcing annotation
+                    │
+                    ▼
+       top-k sparse distribution + entropy
+                    │
+                    ▼
+          training views → SFT / OPD methods
+                    │
+                    ▼
+          QLoRA train → validation → best checkpoint
+                    │
+        ┌───────────┴───────────┐
+        ▼                       ▼
+ Round 0 benchmark       Round 1 rollout/training
+```
+
+每个阶段读取上游 manifest，而不是仅根据目录里“存在某个文件”来判断输入。大文件先写
+`.partial`，通过 schema、数量和 checksum 后再原子提交；成功 shard 重跑时直接复用。
+
+## 5. OPD 方法与分阶段实验
+
+### 5.1 Phase A：先获得完整简历结果
+
+使用 `configs/vfs_weighted_mvp.yaml` 在 3,000 prompts 上完成 Base、SFT 和
+**VFS-Weighted OPD B50**。主方法先做 VFS selection，再同时使用 verifier sample weight 与
+Teacher entropy token weight，最多训练 300 optimizer steps。三个模型统一评测 MATH-500、
+AIME 2024 和 IFEval。该阶段的目标是尽快验证真实 pipeline、获得可量化结果和完整 artifact，
+不是证明每个组件的独立贡献。
+
+### 5.2 Phase B/C：核心基线与消融
+
+完整矩阵如下：
+
+| ID | 方法 | Teacher 预算 | 回答的问题 |
+|---|---|---:|---|
+| E0 | Base | 0 | 原始 1.5B Student 能力 |
+| E1 | SFT | 0 Teacher forward | 标准监督基线 |
+| E2 | Dense Vanilla OPD | B100 | 原始 OPD 的质量和成本上界 |
+| E3 | Random-Budget OPD | B50 | 只减少预算会损失多少 |
+| E4 | Verifier-Filtered OPD | B50 | 简单 pass/unknown 过滤是否足够 |
+| E5 | **VFS-Weighted OPD** | **B50** | 状态选择与双粒度加权的整体效果 |
+| E6 | VFS-OPD | B25 | 极低预算下是否仍有收益 |
+
+全部训练使用 seed `42`。Phase B 优先补 E3 Random-Budget B50 与 E2 Dense B100；只有 E3
+完成后才能声称 VFS selection 比随机选择更有效。Phase C 再补 E4、E6、去掉 entropy/verifier
+权重、K 值和 Round 1。E2 是高成本上界，不是主对手。
+
+### 5.3 Vanilla OPD
+
+Student 先生成 `response`。Teacher 对 `prompt + response` 执行 teacher-forcing，在每个
+response token 位置产生分布。训练时只对 response、非 padding、非异常截断 token 计算 loss，
+所有有效 token 等权。
+
+### 5.4 VFS-Weighted OPD
+
+每题的两个 rollout 按 verification 结果组成四类状态：
+
+| 状态组 | 定义 | 直觉 |
+|---|---|---|
+| `boundary` | pass 与 non-pass 并存 | Student 决策边界不稳定 |
+| `uncertain` | 无 pass，但答案不同或有 unknown | 值得 Teacher 纠正 |
+| `solved` | 两个都 pass | 已掌握，优先级较低 |
+| `failed` | 两个都 fail 且答案一致 | 可能过难或有系统错误 |
+
+选择顺序固定为：非截断优先；`pass > unknown > fail`；短 Teacher context 优先；最后使用由
+seed `42` 派生的稳定 hash。subject/difficulty 间做 round-robin，累计 estimated Teacher tokens
+达到 B50/B25 后停止。选择规则在 benchmark 前冻结，并保存逐条选择原因和预算前后余额。
+
+MVP 在 VFS 选中 states 上使用 verifier sample weight 与 Teacher confidence/entropy token weight。
+双粒度加权是集成贡献，不声称是全新算法；Phase C 通过去掉 entropy 权重和去掉 verifier 权重
+判断各组件贡献。它们发生在 Teacher forward 后，不能替代 VFS 在 annotation 前减少 Teacher 调用。
+
+Teacher 主存储使用 top-64 token ids、top-64 log-probs、tail mass、token entropy 和 response
+mask。它是 `top-k sparse/approximate KL`，不是无损 full-vocabulary KL。使用 32–64 条样本做
+full/sparse KL、梯度 cosine 和单步更新方向审计。
+
+## 6. Rollout 长度与质量门禁
+
+主正式 rollout 使用 `max_new_tokens: 4096`、`temperature: 0.6`、`top_p: 0.95`、每题两个
+sample。这个上限比 1536/3072 更适合多步数学题，同时比无条件 8192 更节省显存、磁盘和
+Teacher token 预算。两个 sample 是状态分组所需的最低 K 值，不扩展到 K=4。
+
+开始正式生成后，至少完成 800 条成功样本才判断质量门禁：
+
+- 截断定义为 `response_tokens >= max_new_tokens`；
+- 截断率必须不高于 20%；
+- 若失败，停止扩展，不要直接删除统计或盲目把上限改成 8192；
+- 先检查 chat template、EOS、thinking 控制和 prompt/response 统计，再决定是否提高上限；
+- 若确有大量正确答案在 4096 处结束，可单独做 8192 成本对照，但不能替换主结果而不记录。
+
+每个 shard 记录成功、失败、empty、timeout、OOM 和 truncated 状态，实时写入
+`quality_gate.json`，可以在另一个终端查看当前截断率。
+
+## 7. 评测与结果判定
+
+### 7.1 三层评测
+
+1. **Smoke**：4–128 条，验证 schema、mask、推理、checkpoint 和报告链路；不作为效果结论。
+2. **Validation/regression**：1,000 条固定 validation，用于 early-stop 和 checkpoint promotion。
+3. **MVP benchmark**：先对 Base、SFT、VFS-Weighted B50 跑 MATH-500、AIME 2024、IFEval；
+4. **完整研究 benchmark**：Phase B 对 Random B50、Dense B100 跑同一矩阵，Phase C 再扩展。
+
+### 7.2 标准 benchmark
 
 | Benchmark | 作用 | 指标 |
 |---|---|---|
-| MATH-500 | 数学主结果 | Accuracy、level/subject 切片 |
-| AIME 2024/2025 | 高难度数学 | Accuracy、pass@1；最终模型额外 pass@8 |
-| GPQA Diamond | 分布外科学推理 | Accuracy |
-| IFEval | 通用能力回归 | Strict/Loose Accuracy |
+| MATH-500 | 主数学指标 | accuracy，附 level/subject 切片 |
+| AIME 2024 | 高难数学 | accuracy/pass@1 |
+| GPQA Diamond | 分布外科学推理 | accuracy |
+| IFEval | 通用指令回归 | strict/loose accuracy |
 
-为了节省 GPU，完整 benchmark 只评测四个最终模型：Base、SFT、Vanilla OPD、Weighted OPD。
+所有模型使用相同 revision、chat template、greedy 解码（`temperature=0`、`num_samples=1`）、
+answer extractor、benchmark revision 和 LightEval 版本。AIME 可额外记录 temperature 0.7
+的 pass@8，但不能用它替代主表的 pass@1。
 
-### 4.4 不需要人工合成的数据
+### 7.3 最终比较
 
-项目使用现成问题、答案和 reasoning traces。唯一必须自动生成的数据是：
+主比较是 `VFS B50 vs Random B50`；辅助比较是 `VFS B50 vs Verifier-filtered B50`、
+`VFS B50 vs Dense B100` 和 `Dense B100 vs Base/SFT`。报告每题 prediction、正确率、paired
+bootstrap 95% CI、MATH-500 win/tie/loss、McNemar exact test、难度/题型/response 长度切片、
+actual Teacher tokens、annotation GPU hours 和每提升 1 个百分点所需 Teacher tokens。
 
-1. 当前 Student 的 rollout；
-2. Teacher 对这些 rollout 的 token 分布与 entropy；
-3. 更新后的 Student 在第二轮产生的新 rollout。
+项目不要求一定超过公开 SOTA。若提升不显著，结论写为“在单 seed、当前数据量和预算下未观察到
+可靠收益”，并分析 verifier pass rate、Teacher entropy、截断率和训练曲线，负结果同样可作为
+简历项目的工程结论。
 
-这些步骤全部由脚本完成，不需要人工编写题目或答案。
+## 8. Early-stop 与停止规则
 
-## 5. 最小实验矩阵
-
-### 5.1 必做模型
-
-| ID | 方法 | Seed | 是否完整 benchmark |
-|---|---|---:|---|
-| E0 | Base Student | 42 | 是 |
-| E1 | SFT | 42 | 是 |
-| E2 | Vanilla OPD | 42 | 是 |
-| E3 | Verifier-only OPD | 42 | validation + MATH-500 消融 |
-| E4 | Confidence-only OPD | 42 | validation + MATH-500 消融 |
-| E5 | Verifier + Confidence Weighted OPD | 42 | 是 |
-
-全项目只使用预先登记的 `seed=42`。E3/E4 只跑 validation 和 MATH-500，可减少完整 benchmark 推理成本。
-
-### 5.2 第二轮 OPD
-
-为了证明系统真正支持策略更新后的 on-policy 数据，只对以下模型的 Round 0 最佳 checkpoint 运行 Round 1：
-
-- Vanilla OPD best checkpoint；
-- Weighted OPD best checkpoint。
-
-Round 1 使用相同固定 seed。它用于展示多轮工程闭环，并比较边际收益与成本。
-
-### 5.3 公平条件
-
-所有 OPD 方法共享 Round 0 Base Student rollout 和 Teacher annotation。必须固定：
-
-- Base Student revision；
-- 同一批 7,500 prompts；
-- 每题 1 个 rollout；
-- 最大 3,072 response tokens；
-- Teacher revision；
-- Teacher top-k；
-- optimizer 和 scheduler；
-- 最大训练 token；
-- validation prompt 和解码参数。
-
-不同方法只能改变 filtering/weighting，不得偷偷增加 Teacher 数据或训练步数。
-
-## 6. OPD 数据流
+完整配置每 200 optimizer steps、MVP 每 100 steps 在固定 validation 上评估一次：
 
 ```text
-OpenR1-Math problems
-        │
-        ▼
-Curate / Split / Decontaminate
-        │
-        ▼
-15k Clean Candidate Pool
-        │
-        ▼
-Fixed First 7.5k Prompt Manifest
-        │
-        ▼
-Base Student rollout × 1
-        │
-        ├──► Math-Verify: pass / fail / unknown
-        │
-        └──► 14B Teacher annotation
-                    │
-                    ▼
-          top-k logits + entropy
-                    │
-                    ▼
-          Build training views
-        ┌───────────┼───────────┐
-        ▼           ▼           ▼
- Vanilla OPD   Verifier OPD   Weighted OPD
-        │                       │
-        ▼                       ▼
- validation + early-stop + checkpoint
-        │                       │
-        └── best checkpoint ────┘
-                    │
-                    ▼
-              Round 1 rollout
+composite = 0.80 × math_accuracy
+          + 0.10 × format_pass_rate
+          + 0.10 × instruction_regression_score
 ```
 
-## 7. 核心训练方法
+连续 3 次提升小于 `0.005` 时停止，恢复该轮 best checkpoint。train loss 只能作为诊断，不能
+单独决定继续训练。每轮最多一个 epoch，当前配置最多 600 steps。
 
-### 7.1 SFT
+出现以下任一情况立即暂停并保留日志：NaN/Inf、未恢复 OOM、gradient norm 异常、validation
+明显下降、IFEval/GPQA 回退超过 2 个百分点、平均输出长度变化超过 30%、空回答/重复率异常、
+Teacher entropy 坍缩或质量门禁失败。
 
-使用现成的 verified reasoning trace：
+只有 Phase A/B 已完成、VFS-Weighted B50 至少不差于 SFT 且剩余预算充足时才进入 Round 1。
+若 Round 1 validation 提升小于 0.5 个百分点或单位 Teacher token 收益变差，停止，不运行 Round 2。
 
-```text
-prompt → verified solution
-```
+## 9. 技术栈与代码边界
 
-只在 response token 上计算 causal language modeling loss。
-
-### 7.2 Vanilla OPD
-
-Student 先生成 response。Teacher 在以下序列上做 teacher-forcing：
-
-```text
-prompt + student response
-```
-
-在每个 response 位置，让 Student distribution 匹配 Teacher distribution。所有有效 token 等权。
-
-### 7.3 Verifier 权重
-
-第一版使用保守策略：
-
-| Verifier | 权重 |
-|---|---:|
-| pass | 1.0 |
-| unknown | 0.3 |
-| fail | 0.0 |
-
-因为最终答案 verifier 无法定位 reasoning 中第一个错误位置，所以主实验不强行蒸馏 fail rollout。`fail=0.1` 只作为后续可选消融，不在最小计划中执行。
-
-### 7.4 Confidence 权重
-
-Teacher annotation 时计算每个 response token 位置的 entropy：
-
-```text
-confidence_t = clip(
-    1 - entropy_t / log(vocab_size),
-    min_weight,
-    max_weight
-)
-```
-
-token 权重在 batch 内归一化到均值约为 1，防止不同方法因为总 loss scale 不同而获得不公平优势。
-
-### 7.5 主方法 Loss
-
-```text
-L = sum(response_mask_t
-        * verifier_weight
-        * confidence_t
-        * sparse_KL_t)
-    / sum(response_mask_t
-          * verifier_weight
-          * confidence_t)
-```
-
-### 7.6 Sparse KL
-
-完整 vocabulary logits 占用大量存储。主实验保存：
-
-- top-32 Teacher token ids；
-- top-32 logprobs；
-- tail probability mass 或等价归一化信息；
-- 每个位置的 Teacher entropy；
-- response mask。
-
-文档和简历中必须称为 `top-k sparse/approximate KL`，不能称为无损 full-vocabulary KL。
-
-在 32–64 条样本上执行 full-logits audit：比较 sparse KL 与 full KL 的 loss、梯度 cosine similarity 和一次 optimizer step 后的参数变化趋势。
-
-## 8. 技术栈
-
-| 模块 | 框架 |
+| 功能 | 技术 |
 |---|---|
-| Python 环境 | Python 3.11 + uv |
-| 深度学习 | PyTorch |
-| 模型加载 | Hugging Face Transformers |
-| Rollout | vLLM |
-| QLoRA | PEFT + bitsandbytes |
-| 训练启动 | Accelerate |
-| 数据 | Datasets + PyArrow/Parquet |
-| 数学验证 | Math-Verify |
-| 标准评测 | LightEval |
-| 配置 | 分层 YAML + 确定性 deep merge |
-| CLI | stdlib argparse（降低本地 smoke 依赖） |
-| Schema | Pydantic |
-| 实验记录 | W&B；无法联网时写本地 JSONL |
-| 测试 | pytest + ruff + mypy |
-| 环境固定 | Docker |
-| 大文件 | S3/MinIO 或持久化磁盘 |
+| Python/依赖 | Python 3.11、`uv`、锁定 `uv.lock` |
+| 训练 | PyTorch、Transformers、PEFT、bitsandbytes、Accelerate |
+| rollout | vLLM |
+| 数据 | Datasets、PyArrow、Parquet |
+| verifier | Math-Verify |
+| benchmark | LightEval |
+| 配置/Schema | YAML deep-merge、Pydantic |
+| 测试/质量 | pytest、ruff、mypy |
+| 记录 | manifest、JSON/Parquet、可选 W&B |
 
-第一版使用阶段式 CLI 和 shell 脚本，不使用复杂工作流调度器。
+第一版不引入 Ray、Kubernetes、Airflow、数据库或微服务。阶段式 CLI + shell 脚本已经足以
+支持 AutoDL 的单卡任务；只有需要多个并行 worker 时才考虑调度器。
 
-## 9. 仓库结构
+## 10. Artifact 与目录约定
 
 ```text
-OPDProj/
-├── README.md
-├── PROJECT_PLAN.md
-├── plans/
-│   ├── README.md
-│   ├── PROJECT_PLAN_RECOMMENDED.md
-│   └── PROJECT_PLAN_RESEARCH_SCALE.md
-├── pyproject.toml
-├── uv.lock
-├── Dockerfile
-├── Makefile
-├── configs/
-│   ├── data.yaml
-│   ├── rollout.yaml
-│   ├── teacher.yaml
-│   ├── sft.yaml
-│   ├── vanilla_opd.yaml
-│   └── weighted_opd.yaml
-├── src/opd/
-│   ├── cli.py
-│   ├── schemas.py
-│   ├── artifacts.py
-│   ├── data/
-│   ├── rollout/
-│   ├── teacher/
-│   ├── verifier/
-│   ├── training/
-│   ├── evaluation/
-│   └── monitoring/
-├── scripts/
-├── tests/
-├── eval/
-├── experiments/
-└── reports/
+artifacts/
+├── data/raw/                 # 原始快照（只读）
+├── data/curated/             # 固定 split
+├── data/contamination/       # clean/quarantine/report
+├── data/rollouts/round_N/    # Student rollout shards
+├── data/verifications/       # verifier 结果
+├── data/annotation_selection/# 选择决策、预算报告与 manifest
+├── data/annotations/round_N/ # Teacher sparse annotation
+├── data/training_views/      # 各方法训练视图
+├── checkpoints/              # adapter、best、latest、merged
+├── evaluation/               # regression 与内部评测
+├── lighteval/                # 标准 benchmark 详情和结果
+└── reports/                  # 汇总表、图、失败案例
 ```
 
-## 10. 工程接口
+每个 artifact 的 manifest 至少记录：Git commit、配置 hash、上游 artifact id、模型和 tokenizer
+revision、tokenizer fingerprint、数据 revision、记录数、失败数、checksum、GPU 型号、wall time、
+Teacher tokens 和 job metrics。Git 只提交代码、配置、schema 和小 fixture，不提交模型、Parquet、
+checkpoint 或日志。
 
-项目最终提供以下命令：
+由于此前可能存在 Qwen3 旧结果，切换方案前应先把旧的 `artifacts/data/`、`checkpoints/` 和
+`logs/` 复制到带日期的备份目录或对象存储。新的 manifest 必须使用新模型 revision，禁止把旧
+Qwen3 rollout 与方案一 Teacher annotation 拼接。
+
+## 11. GPU、磁盘与时间预算
+
+配置中的目标为 `40 H100 GPU hours`，硬上限为 `60 H100 GPU hours`。这是方案一的估算，不是
+保证值；每个脚本都会通过 `opd budget` 读取已有 job metrics，并在达到 hard cap 时阻止新任务。
+
+| 阶段 | 预计 H100 GPU 小时 |
+|---|---:|
+| tiny/Qwen smoke 与稽核 | 2–5 |
+| Phase A 3k Student rollout（K=2） | 2–5 |
+| Phase A VFS-B50 Teacher annotation | 2–6 |
+| Phase A SFT + VFS-Weighted 训练 | 3–7 |
+| Round 0 内部评测与 promotion | 2–4 |
+| Final benchmark、报告和重试余量 | 5–10 |
+| **Phase A 估计合计** | **16–37** |
+| 可选 Phase B / Round 1 | 不计入 Phase A，另行实测 |
+
+若接近 `60`，按以下顺序降本：先取消 Round 1，再把 E4/E6 限制为 MATH-500，最后缩小 prompt
+数量；不删除 Base、SFT、Dense、Random-B50、VFS-B50、validation 和逐题结果。正式运行前保留至少
+30GB 可用磁盘。200GB 数据盘上只保留当前 merged checkpoint、必要 shard、manifest 和日志；
+成功生成的临时模型缓存和旧 benchmark 详情可以在校验 checksum 后清理。
+
+## 12. AutoDL 执行顺序
 
 ```bash
-opd doctor
-opd data prepare --config configs/data.yaml
-opd data import-eval --name math500 --input EXPORT.jsonl --config configs/main.yaml
-opd data audit-contamination --config configs/data.yaml
-opd audit sparse-kl --output artifacts/audits/sparse_kl.json --config configs/main.yaml
-opd rollout generate --round 0 --config configs/rollout.yaml
-opd verify math --round 0 --config configs/main.yaml
-opd teacher annotate --round 0 --config configs/teacher.yaml
-opd data build-view --method vanilla-opd --round 0
-opd data build-view --method weighted-opd --round 0
-opd train --config configs/sft.yaml
-opd train --config configs/vanilla_opd.yaml
-opd train --config configs/weighted_opd.yaml
-opd evaluate --suite regression --checkpoint CHECKPOINT
-opd benchmark run --checkpoint CHECKPOINT --output-dir OUTPUT_DIR
-opd report build --experiment EXPERIMENT_ID
+source scripts/autodl_env.sh
+scripts/remote_bootstrap.sh
+make check
+make smoke
+make tiny-gpu-smoke
+scripts/qwen_gpu_smoke.sh
 ```
 
-每个命令读取 manifest 并产生新的 manifest，不能依赖“某个目录里刚好存在什么文件”。
+Qwen smoke 通过后，检查固定 Teacher revision、tokenizer fingerprint 和截断率。然后优先运行
+简历 MVP：
 
-## 11. 数据与 Artifact 设计
-
-### 11.1 数据目录
-
-```text
-data/
-├── raw/
-├── curated/
-├── rollouts/
-├── annotations/
-├── verifications/
-├── training_views/
-├── eval/
-└── manifests/
+```bash
+scripts/run_resume_mvp.sh
+scripts/run_resume_sft.sh
 ```
 
-### 11.2 Manifest 必须记录
+详细断点续跑与验收见 [`docs/RESUME_MVP.md`](docs/RESUME_MVP.md)。以下 7.5k 多方法命令属于
+Phase B/C，不应在 MVP 出结果前启动：
 
-- artifact id；
-- 上游 artifact id；
-- Git commit；
-- 完整配置 hash；
-- 模型和 tokenizer revision；
-- 数据集 revision；
-- shard 数和总记录数；
-- checksum；
-- 创建时间；
-- GPU 型号和运行时间；
-- prompt/response/Teacher token 数；
--失败和跳过数量。
-
-### 11.3 分片与断点续跑
-
-- rollout shard：100–250 prompts；
-- annotation shard：与 rollout shard 一一对应；
-- 临时文件使用 `.partial`；
-- schema、数量和 checksum 通过后再提交；
-- 重启时只补缺失或失败 shard；
-- 单条异常写入 error record，不终止整个任务。
-
-## 12. Early Stopping
-
-### 12.1 Validation 指标
-
-```text
-composite_score =
-    0.80 * math_validation_accuracy
-  + 0.10 * format_pass_rate
-  + 0.10 * instruction_regression_score
+```bash
+scripts/prepare_data.sh configs/data.yaml
+scripts/fetch_eval_data.sh configs/main.yaml
+scripts/audit_contamination.sh configs/main.yaml
+uv run --no-sync opd audit sparse-kl \
+  --output artifacts/audits/sparse_kl.json \
+  --config configs/main.yaml
+scripts/generate_rollouts.sh configs/rollout.yaml 0
+scripts/verify.sh configs/main.yaml 0
+scripts/build_vfs_experiment_data.sh
+scripts/train.sh configs/sft.yaml
+scripts/train.sh configs/dense_opd.yaml
+scripts/train.sh configs/random_budget_b50.yaml
+scripts/train.sh configs/verifier_filtered_b50.yaml
+scripts/train.sh configs/vfs_b50.yaml
+scripts/train.sh configs/vfs_b25.yaml
 ```
 
-权重在实验开始前固定。
+`build_vfs_experiment_data.sh` 先生成五份不可变 selection manifest，再执行一次 Dense Teacher
+annotation，最后按选择集合构建训练视图。Teacher-forcing 是确定性的，因此共享 Dense 缓存不会
+改变任何方法的训练数据；成本报告按各 selection 中实际 `teacher_tokens` 求和。训练完成后先运行
+regression 和 promotion，再对候选 checkpoint 做 LightEval。
 
-### 12.2 单轮停止配置
+## 13. 实施里程碑与验收
 
-```yaml
-early_stopping:
-  eval_steps: 200
-  patience: 3
-  min_delta: 0.005
-  max_epochs_per_round: 1
-  load_best_model_at_end: true
-```
+### M0：工程门禁
 
-连续 3 次 evaluation 提升小于 0.5 个百分点时停止。不能根据 train loss 单独停止或继续。
+`make check`、CPU smoke、配置解析、manifest、mask、sparse KL 和 shard resume 全部通过。
 
-### 12.3 硬停止
+### M1：模型 smoke
 
-以下情况立即暂停：
+tiny GPU smoke 和方案一 Qwen smoke 成功；能下载两模型，tokenizer fingerprint 一致，能完成
+一次 rollout、annotation、QLoRA step、merge 和 MATH smoke。
 
-- NaN/Inf；
-- gradient norm 持续异常；
-- validation accuracy 明显下跌；
-- 通用回归下降超过 2 个百分点；
-- 平均输出长度变化超过 30%；
-- 重复、空回答或拒答率突然上升；
-- Teacher/Student entropy 异常坍缩；
-- 自动减小 batch 后仍连续 OOM。
+### M2：简历 MVP 数据
 
-### 12.4 是否执行 Round 1
+固定 3,000 prompt、每题 K=2 的 rollout、verification、selection、annotation 和 weighted view
+完成；所有 shard 可恢复，截断率不高于 20%，每个方法的 Teacher tokens 和选择原因可统计。
 
-Round 0 后，只有满足以下条件才继续：
+### M3：Round 0 训练
 
-- Vanilla 或 Weighted OPD 至少不差于 SFT；
-- pipeline 没有 tokenizer/mask/verifier 问题；
-- 剩余预算不少于 20 H100 小时；
-- Round 0 validation 有明确可分析信号。
+Base、SFT、VFS-Weighted B50 完成统一 benchmark 并能恢复 best checkpoint；validation 曲线、
+early-stop、GPU hours 和 artifact lineage 完整。随后再进入 Random-B50 与 Dense-B100。
 
-Round 1 后不再继续 Round 2，除非用户主动升级到推荐完整版。
+### M4：最终评测与可选 Round 1
 
-## 13. 评测与比较
+先完成统一 benchmark、逐题预测、统计比较、失败案例和质量—成本 Pareto 图。只有主比较已经
+完成且预算充足时，才对最佳候选执行 Round 1。
 
-### 13.1 主比较
+### M5：可交付报告
 
-```text
-Weighted OPD vs Vanilla OPD
-Weighted OPD vs SFT
-Vanilla OPD vs Base
-```
+报告必须包含模型/数据版本、训练配置、单 seed 限制、截断率、Verifier 分布、Teacher entropy、
+各方法分数、成本、失败案例、已知限制和复现实验命令。
 
-### 13.2 固定解码
+## 14. 简历项目表述
 
-主结果：
+> 设计 Verifier-First State-Budgeted OPD：对 1.5B Student 的同题多 rollout 先执行数学验证
+> 与状态分组，再在固定 Teacher-token 预算内选择性调用 7B Math Teacher；实现确定性 selection
+> manifest、可恢复 sparse-logit annotation、QLoRA 和质量—成本 Pareto 评测，并在相同 Teacher
+> tokens 下对比 random-budget、verifier-filtered 与 dense OPD。
 
-```yaml
-temperature: 0
-num_samples: 1
-```
-
-AIME 最终扩展结果：
-
-```yaml
-temperature: 0.7
-top_p: 0.95
-num_samples: 8
-```
-
-### 13.3 单 Seed 统计策略
-
-所有训练和生成固定使用 `seed=42`。报告：
-
-- 每个 benchmark 的原始分数；
-- 基于逐题结果的 paired bootstrap 95% confidence interval；
-- MATH-500 逐题 win/tie/loss；
-- 对成对正确/错误结果使用 McNemar test；
-- 按 subject、difficulty、response length 和 verifier status 切片；
-- validation checkpoint 曲线，而不是只展示最终一个点。
-
-paired bootstrap 只能衡量评测样本的不确定性，不能替代多 seed 对训练随机性的估计。最终报告必须明确写出“本项目使用单训练 seed，训练方差未被完整测量”这一限制，不得把样本级置信区间描述成训练稳定性证明。
-
-### 13.4 成功判据
-
-主方法满足以下多数条件，可视为积极结果：
-
-1. MATH validation 和 MATH-500 高于 Vanilla OPD；
-2. paired bootstrap 差值置信区间不明显跨越 0；
-3. MATH-500 的逐题净胜样本数为正；
-4. AIME 不退化；
-5. GPQA/IFEval 下降不超过预设阈值；
-6. Teacher tokens 与 Vanilla OPD 相同；
-7. 没有输出长度、重复率和格式退化。
-
-如果差异不显著，项目仍然成立，但结论应写成“在当前预算和数据规模下，未观察到可靠收益”，并分析 verifier 过滤率、Teacher entropy 和数据新鲜度。
-
-## 14. GPU 时间预算
-
-### 14.1 总预算
-
-```text
-目标：60–90 H100 GPU 小时
-硬上限：110 H100 GPU 小时
-```
-
-任何阶段达到硬上限都停止扩大实验，只完成已有 artifact 的评测和报告。
-
-### 14.2 分阶段预算
-
-| 阶段 | H100 GPU 小时 | 备注 |
-|---|---:|---|
-| 小模型与 8B smoke | 6–12 | loss、mask、verifier、恢复 |
-| Base rollout：7.5k × 1 | 4–7 | response 上限 3,072；800 条截断门禁 |
-| Round 0 Teacher annotation | 3–6 | top-32 + entropy |
-| SFT | 4–8 | seed 42，early-stop |
-| 四个 OPD 训练 run | 12–24 | Vanilla、Verifier、Confidence、Weighted 各一次 |
-| Round 1：两个最佳 checkpoint | 12–22 | rollout、annotation、training |
-| 最终 benchmark | 7–14 | 仅四个最终模型 |
-| 失败重试和余量 | 6–12 | 不提前花掉 |
-| **总计** | **54–105** | 目标控制在 60–90 |
-
-### 14.3 降本规则
-
-按以下顺序降本，不破坏实验可信度：
-
-1. 使用 early stopping；
-2. 消融只用 25%–50% train prompts；
-3. 完整 benchmark 只评测最终模型；
-4. Round 1 只运行两个最佳 checkpoint；
-5. 保持 3,072 token 上限，优先减少正式 prompt 数，而不是制造截断样本；
-6. 若 800 条门禁仍失败，停止并评估关闭 thinking mode，不盲目继续生成；
-7. 若仍超预算，将 7.5k 正式 prompts 进一步下调，并在报告中明确记录。
-
-不允许通过取消 Base、SFT、Vanilla OPD 或独立 validation 来省钱。
-
-## 15. 实施里程碑
-
-### M0：工程骨架，2–3 天，0 GPU 小时
-
-- Python 项目、目录和配置；
-- argparse CLI；
-- Pydantic schema；
-- manifest 和 artifact hash；
-- Docker、doctor、pytest、ruff、mypy。
-
-验收：CPU CI 全部通过。
-
-### M1：数据与 Verifier，3–5 天，0–2 GPU 小时
-
-- 下载已固定 revision 的 OpenR1-Math；
-- 产生 smoke/train/validation split；
-- 污染检查；
-- Math-Verify wrapper；
-- 数据卡。
-
-验收：每条数据可追溯，verifier 三态正确。
-
-### M2：Rollout，3–4 天，4–8 GPU 小时
-
-- tiny model 本地 smoke；
-- 8B vLLM rollout；
-- 分片、恢复和错误记录；
-- 先生成 800 条，通过截断率不高于 20% 的门禁后自动扩展到 7.5k。
-
-验收：中断后不会重复生成成功 shard；`quality_gate.json` 为 `passed`。
-
-### M3：Teacher Annotation，3–5 天，3–7 GPU 小时
-
-- teacher-forcing；
-- response mask；
-- top-32 logits；
-- entropy；
-- sparse/full KL audit。
-
-验收：无 token 偏移，sparse KL audit 可解释。
-
-### M4：Baseline 与主方法，5–8 天，25–50 GPU 小时
-
-- SFT；
-- Vanilla OPD；
-- Verifier-only；
-- Confidence-only；
-- Weighted OPD；
-- early-stop、checkpoint resume。
-
-验收：所有方法使用同一训练和评测入口。
-
-### M5：Round 1 与配对分析，4–7 天，15–30 GPU 小时
-
-- 固定 seed 42；
-- 选择 Round 0 最佳 checkpoint；
-- 生成 Round 1 rollout；
-- 第二轮训练；
-- 记录边际收益/Teacher token。
-
-验收：至少完成一条真正的多轮 on-policy 链路。
-
-### M6：正式评测与报告，4–6 天，10–20 GPU 小时
-
-- MATH-500；
-- AIME；
-- GPQA Diamond；
-- IFEval；
-- 统计检验；
-- 失败案例；
-- 成本 Pareto；
-- README、数据卡和模型卡。
-
-预计总周期：3–5 周。
-
-## 16. 测试与质量门禁
-
-### 16.1 必须具备的单元测试
-
-- prompt/response mask；
-- padding、EOS、截断；
-- sparse KL 与 full KL 小样本对照；
-- verifier pass/fail/unknown；
-- confidence 权重范围与归一化；
-- manifest hash 稳定性；
-- shard resume；
-- 固定 seed 可复现。
-
-### 16.2 End-to-end 测试
-
-用 16–32 条 fixture 和 tiny model 执行：
-
-```text
-prepare
-→ rollout
-→ verify
-→ teacher annotate
-→ build training view
-→ train one optimizer step
-→ evaluate
-→ build report
-```
-
-### 16.3 Checkpoint 晋级
-
-只有满足以下条件才标记为 `promotable`：
-
-- schema 和 artifact 完整；
-- validation 不低于对应 baseline 的回退阈值；
-- 无 NaN、OOM 未恢复或 checkpoint 损坏；
-- 输出长度、格式和重复率正常；
-- 配置、代码 commit 和数据 manifest 可追溯。
-
-## 17. 远端 GPU 执行方式
-
-### 17.1 每次实例启动
-
-```text
-拉取固定 Git commit
-→ 启动固定 Docker image
-→ opd doctor
-→ 下载输入 manifest/shards
-→ 执行一个阶段 job
-→ 上传 artifact 和日志
-→ 远端校验 checksum
-→ 关闭实例
-```
-
-### 17.2 Job 拆分
-
-禁止使用一个脚本从数据下载一直运行到最终评测。必须拆成：
-
-```text
-prepare-data
-generate-rollouts
-verify
-annotate-teacher
-build-training-view
-train
-evaluate
-build-report
-```
-
-这样租用服务器中断时，不会丢失已经完成的 Teacher annotation 或 rollout。
-
-### 17.3 日志和成本
-
-每个 job 保存：
-
-- GPU 型号和数量；
-- wall time；
-- tokens/s；
-- prompt/response/Teacher tokens；
-- 峰值显存；
-- shard 成功率；
-- estimated GPU hours/cost；
-- Git commit；
-- config hash；
-- output manifest。
-
-## 18. 最终交付物
-
-代码仓库最终必须包含：
-
-1. 一条命令运行的 tiny-model smoke demo；
-2. 可恢复的 8B rollout 和 14B annotation pipeline；
-3. SFT、Vanilla OPD 和 Weighted OPD 统一训练入口；
-4. 自动化 validation、early-stop 和 checkpoint promotion；
-5. MATH-500/AIME/GPQA/IFEval 结果；
-6. 单 seed 的逐题 paired bootstrap、McNemar test 和限制说明；
-7. 数据污染报告；
-8. 数据卡与模型卡；
-9. 质量—成本 Pareto 图；
-10. 失败案例和负结果分析；
-11. 实际 GPU 小时和 Teacher token 账单；
-12. 5 分钟演示脚本。
-
-## 19. 简历表述模板
-
-获得真实数字后再填入结果：
-
-> 构建面向 8B LLM 的预算感知 On-Policy Distillation 系统，使用 vLLM、Transformers、QLoRA 与 Math-Verify 解耦 Student rollout、14B Teacher sparse-logit annotation、Verifier 和训练任务；实现分片恢复、artifact lineage、validation early-stop 与标准 benchmark 评测，并通过 verifier-aware filtering 和 token-level confidence weighting，在固定 Teacher token 预算下对比 SFT、Vanilla OPD 和改进方法的质量—成本表现。
-
-不能在实验前填写“提升 X%”或“降低 Y%”。
-
-## 20. 立即执行清单
-
-在租用主实验 GPU 前，依次完成：
-
-1. 初始化 Git；
-2. 创建 `pyproject.toml` 和锁文件；
-3. 创建目录结构和 CLI；
-4. 定义 Pydantic schemas；
-5. 实现 artifact manifest 和 hash；
-6. 准备 128 条 OpenR1-Math fixture；
-7. 实现 Math verifier；
-8. 实现 response mask 和测试；
-9. 实现 sparse KL 和 full-KL audit 测试；
-10. 用 tiny model 跑通 end-to-end；
-11. 构建 Docker image；
-12. 运行 8B/14B 的 32 条 GPU smoke；
-13. 根据真实 tokens/s 更新 GPU 预算；
-14. 从 15k 清洗候选池选择固定前 7.5k，生成 Round 0 rollout；800 条时自动执行截断门禁。
-
-前 13 项没有完成前，不启动大规模生成或训练。
+面试时如实说明：方案一主动选择较弱 Student 是为了避免基线饱和，并不是声称 1.5B 模型达到
+生产级数学能力；项目贡献是可审计的 OPD 工程链路和受控实验结论。

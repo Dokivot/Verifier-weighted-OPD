@@ -1,0 +1,16 @@
+defaults: vfs_b50.yaml
+
+annotation_selection:
+  budget_ratio: 0.25
+  output_dir: artifacts/data/annotation_selection/vfs_b25/round_0
+
+training_view:
+  selection_path: artifacts/data/annotation_selection/vfs_b25/round_0/selected.parquet
+  output_name: vfs_b25
+
+training:
+  input_path: artifacts/data/training_views/round_0/vfs_b25.parquet
+  output_dir: checkpoints/vfs_b25_seed42
+
+evaluation:
+  output_dir: artifacts/evaluation/vfs_b25

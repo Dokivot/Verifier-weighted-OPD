@@ -1,7 +1,7 @@
 defaults: base.yaml
 
 project:
-  run_tier: minimum-credible
+  run_tier: recommended-scheme-1
 
 contamination:
   eval_paths:

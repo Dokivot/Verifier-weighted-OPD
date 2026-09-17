@@ -12,9 +12,9 @@ command -v nvidia-smi >/dev/null || {
 GPU_MEMORY_MIB="$(
   nvidia-smi --id=0 --query-gpu=memory.total --format=csv,noheader,nounits | tr -d '[:space:]'
 )"
-if [[ ! "$GPU_MEMORY_MIB" =~ ^[0-9]+$ ]] || [[ "$GPU_MEMORY_MIB" -lt 40000 ]]; then
-  echo "ERROR: Qwen3-14B BF16 smoke requires a 40GB-class GPU; found ${GPU_MEMORY_MIB:-unknown} MiB" >&2
-  echo "Run make tiny-gpu-smoke on a 24GB card instead." >&2
+if [[ ! "$GPU_MEMORY_MIB" =~ ^[0-9]+$ ]] || [[ "$GPU_MEMORY_MIB" -lt 24000 ]]; then
+  echo "ERROR: Qwen2.5-Math-7B BF16 smoke requires a 24GB-class GPU; found ${GPU_MEMORY_MIB:-unknown} MiB" >&2
+  echo "Use a 24GB-or-larger GPU for scheme-one smoke." >&2
   exit 2
 fi
 
@@ -26,6 +26,7 @@ uv run --no-sync opd audit sparse-kl \
   --config "$CONFIG"
 scripts/generate_rollouts.sh "$CONFIG" 0
 scripts/verify.sh "$CONFIG" 0
+scripts/select_annotations.sh "$CONFIG" 0
 scripts/annotate_teacher.sh "$CONFIG" 0
 uv run --no-sync opd data build-view --round 0 --method weighted-opd --config "$CONFIG"
 scripts/train.sh "$CONFIG"
@@ -42,4 +43,4 @@ scripts/evaluate_lighteval.sh \
   artifacts/qwen_gpu_smoke/lighteval/weighted_opd \
   "$CONFIG"
 
-echo "Qwen GPU smoke passed. Inspect artifacts/qwen_gpu_smoke before starting 15k rollout."
+echo "Qwen GPU smoke passed. Inspect artifacts/qwen_gpu_smoke before starting the 3k resume MVP."

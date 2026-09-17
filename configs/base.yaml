@@ -3,8 +3,8 @@ project:
   seed: 42
   seed_policy: single
   registered_seeds: [42]
-  gpu_hour_target: 90
-  gpu_hour_hard_cap: 110
+  gpu_hour_target: 40
+  gpu_hour_hard_cap: 60
 
 paths:
   artifact_dir: artifacts
@@ -14,13 +14,13 @@ paths:
 
 models:
   student:
-    name: Qwen/Qwen3-8B
-    revision: b968826d9c46dd6066d109eabc6255188de91218
-    tokenizer_revision: b968826d9c46dd6066d109eabc6255188de91218
+    name: Qwen/Qwen2.5-1.5B-Instruct
+    revision: 989aa7980e4cf806f80c7fef2b1adb7bc71aa306
+    tokenizer_revision: 989aa7980e4cf806f80c7fef2b1adb7bc71aa306
   teacher:
-    name: Qwen/Qwen3-14B
-    revision: 40c069824f4251a91eefaf281ebe4c544efd3e18
-    tokenizer_revision: 40c069824f4251a91eefaf281ebe4c544efd3e18
+    name: Qwen/Qwen2.5-Math-7B-Instruct
+    revision: ef9926d75ab1d54532f6a30dd5e760355eb9aa4d
+    tokenizer_revision: ef9926d75ab1d54532f6a30dd5e760355eb9aa4d
   vocab_size: 151936
 
 data:
@@ -70,14 +70,14 @@ rollout:
   shard_size: 200
   tensor_parallel_size: 1
   dtype: bfloat16
-  max_model_length: 4096
+  max_model_length: 8192
   gpu_memory_utilization: 0.9
   generation:
     temperature: 0.6
     top_p: 0.95
     top_k: 20
-    max_new_tokens: 3072
-    num_samples: 1
+    max_new_tokens: 4096
+    num_samples: 2
     skip_special_tokens: false
   quality_gate:
     enabled: true
@@ -88,14 +88,37 @@ verification:
   prompt_path: null
   rollout_path: null
 
+annotation_selection:
+  enabled: true
+  strategy: vfs
+  rollouts_per_prompt: 2
+  rollout_path: null
+  verification_path: null
+  prompt_path: null
+  output_dir: null
+  budget_ratio: 0.5
+  budget_tokens: null
+  status_priority: [pass, unknown, fail]
+  group_priority: [boundary, uncertain, solved, failed]
+  stratify_by: [subject, difficulty]
+
 teacher:
   backend: transformers
   input_path: null
-  top_k: 32
+  output_dir: null
+  top_k: 64
   dtype: bfloat16
   load_in_8bit: false
   max_length: 4096
   shard_size: 200
+
+training_view:
+  rollout_path: null
+  verification_path: null
+  annotation_path: null
+  selection_path: null
+  output_dir: null
+  output_name: null
 
 weighting:
   verifier:
@@ -123,7 +146,7 @@ training:
   learning_rate: 0.00002
   weight_decay: 0.0
   max_grad_norm: 1.0
-  max_steps: 800
+  max_steps: 600
   warmup_steps: 40
   save_steps: 200
   resume_from_checkpoint: null
@@ -149,16 +172,16 @@ training:
 
 evaluation:
   backend: vllm
-  model_name: Qwen/Qwen3-8B
-  model_revision: b968826d9c46dd6066d109eabc6255188de91218
-  tokenizer_revision: b968826d9c46dd6066d109eabc6255188de91218
+  model_name: Qwen/Qwen2.5-1.5B-Instruct
+  model_revision: 989aa7980e4cf806f80c7fef2b1adb7bc71aa306
+  tokenizer_revision: 989aa7980e4cf806f80c7fef2b1adb7bc71aa306
   output_dir: artifacts/evaluation/base
   batch_size: 8
   tensor_parallel_size: 1
   generation:
     temperature: 0.0
     top_p: 1.0
-    max_new_tokens: 2048
+    max_new_tokens: 4096
     num_samples: 1
   suites:
     regression:
@@ -172,7 +195,7 @@ benchmark:
   registry_path: eval/registry.yaml
   launcher: vllm
   dtype: bfloat16
-  max_model_length: 40960
+  max_model_length: 8192
   tensor_parallel_size: 1
   gpu_memory_utilization: 0.9
   use_chat_template: true

@@ -3,6 +3,16 @@ defaults: main.yaml
 project:
   run_tier: qwen-gpu-smoke
 
+models:
+  student:
+    name: Qwen/Qwen2.5-1.5B-Instruct
+    revision: 989aa7980e4cf806f80c7fef2b1adb7bc71aa306
+    tokenizer_revision: 989aa7980e4cf806f80c7fef2b1adb7bc71aa306
+  teacher:
+    name: Qwen/Qwen2.5-Math-7B-Instruct
+    revision: ef9926d75ab1d54532f6a30dd5e760355eb9aa4d
+    tokenizer_revision: ef9926d75ab1d54532f6a30dd5e760355eb9aa4d
+
 paths:
   artifact_dir: artifacts/qwen_gpu_smoke
   data_dir: artifacts/qwen_gpu_smoke/data
@@ -60,6 +70,9 @@ training:
 
 evaluation:
   backend: vllm
+  model_name: Qwen/Qwen2.5-1.5B-Instruct
+  model_revision: 989aa7980e4cf806f80c7fef2b1adb7bc71aa306
+  tokenizer_revision: 989aa7980e4cf806f80c7fef2b1adb7bc71aa306
   output_dir: artifacts/qwen_gpu_smoke/evaluation/weighted_opd
   batch_size: 2
   max_model_length: 2048

@@ -1,0 +1,21 @@
+defaults: main.yaml
+
+annotation_selection:
+  strategy: vfs
+  budget_ratio: 0.5
+  output_dir: artifacts/data/annotation_selection/vfs_b50/round_0
+
+training_view:
+  annotation_path: artifacts/data/annotations/dense_b100/round_0/teacher.parquet
+  selection_path: artifacts/data/annotation_selection/vfs_b50/round_0/selected.parquet
+  output_dir: artifacts/data/training_views/round_0
+  output_name: vfs_b50
+
+training:
+  method: vanilla_opd
+  max_records: null
+  input_path: artifacts/data/training_views/round_0/vfs_b50.parquet
+  output_dir: checkpoints/vfs_b50_seed42
+
+evaluation:
+  output_dir: artifacts/evaluation/vfs_b50

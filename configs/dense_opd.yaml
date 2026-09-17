@@ -1,0 +1,23 @@
+defaults: vfs_b50.yaml
+
+annotation_selection:
+  strategy: dense
+  budget_ratio: 1.0
+  output_dir: artifacts/data/annotation_selection/dense_b100/round_0
+
+teacher:
+  input_path: artifacts/data/annotation_selection/dense_b100/round_0/selected.parquet
+  output_dir: artifacts/data/annotations/dense_b100/round_0
+
+training_view:
+  annotation_path: artifacts/data/annotations/dense_b100/round_0/teacher.parquet
+  selection_path: artifacts/data/annotation_selection/dense_b100/round_0/selected.parquet
+  output_name: dense_b100
+
+training:
+  max_records: null
+  input_path: artifacts/data/training_views/round_0/dense_b100.parquet
+  output_dir: checkpoints/dense_b100_seed42
+
+evaluation:
+  output_dir: artifacts/evaluation/dense_b100

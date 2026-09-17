@@ -40,6 +40,7 @@ def load_config(path: str | Path) -> dict[str, Any]:
         merged = _deep_merge(merged, load_config(default_path))
     config = _deep_merge(merged, loaded)
     _validate_seed_policy(config)
+    _validate_rollout_lengths(config)
     return config
 
 
@@ -56,6 +57,28 @@ def _validate_seed_policy(config: dict[str, Any]) -> None:
     if registered != [seed]:
         raise ConfigurationError(
             "Single-seed mode requires project.registered_seeds to contain only project.seed"
+        )
+
+
+def _validate_rollout_lengths(config: dict[str, Any]) -> None:
+    rollout = config.get("rollout")
+    if not isinstance(rollout, dict):
+        return
+    generation = rollout.get("generation")
+    if not isinstance(generation, dict):
+        return
+    max_model_length = rollout.get("max_model_length")
+    max_new_tokens = generation.get("max_new_tokens")
+    if max_model_length is None or max_new_tokens is None:
+        return
+    if not isinstance(max_model_length, int) or max_model_length <= 0:
+        raise ConfigurationError("rollout.max_model_length must be a positive integer")
+    if not isinstance(max_new_tokens, int) or max_new_tokens <= 0:
+        raise ConfigurationError("rollout.generation.max_new_tokens must be a positive integer")
+    if max_new_tokens >= max_model_length:
+        raise ConfigurationError(
+            "rollout.generation.max_new_tokens must be smaller than "
+            "rollout.max_model_length so the prompt fits in the vLLM context"
         )
 
 

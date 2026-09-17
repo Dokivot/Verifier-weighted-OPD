@@ -44,6 +44,8 @@ required = {
 }
 expected_versions = {
     "lighteval": "0.9.2",
+    "torch": "2.7.1",
+    "transformers": "4.57.6",
     "vllm": "0.10.1.1",
     "xxhash": "3.8.1",
 }
@@ -78,4 +80,4 @@ print(f"torch_cuda={torch.version.cuda}")
 PY
 
 uv run --no-sync opd doctor --config configs/main.yaml
-echo "AutoDL preflight passed. Use an 80 GiB GPU for the 14B BF16 teacher stage."
+echo "AutoDL preflight passed. Scheme one uses a 7B Math Teacher; 24 GiB is the minimum and 80 GiB is preferred for full annotation."

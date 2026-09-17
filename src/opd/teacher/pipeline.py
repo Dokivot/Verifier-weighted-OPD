@@ -4,7 +4,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
-from opd.artifacts import build_manifest, save_manifest, verified_manifest_id
+from opd.artifacts import build_manifest, save_manifest, verified_artifact_manifest_id
 from opd.hashing import file_sha256, stable_hash
 from opd.monitoring.job import JobTimer
 from opd.schemas import RecordStatus, RolloutRecord, TeacherAnnotationRecord
@@ -24,7 +24,7 @@ def _annotator(config: dict[str, Any]) -> Any:
             model_name=model["name"],
             model_revision=model["revision"],
             tokenizer_revision=model.get("tokenizer_revision", model["revision"]),
-            top_k=int(teacher.get("top_k", 32)),
+            top_k=int(teacher.get("top_k", 64)),
             dtype=teacher.get("dtype", "bfloat16"),
             load_in_8bit=bool(teacher.get("load_in_8bit", False)),
             max_length=int(teacher.get("max_length", 2048)),
@@ -37,14 +37,14 @@ def annotate_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
     extension = config["data"].get("format", "jsonl")
     rollout_path = Path(
         config["teacher"].get("input_path")
-        or data_dir / "rollouts" / f"round_{round_id}" / f"rollouts.{extension}"
+        or data_dir / "annotation_selection" / f"round_{round_id}" / f"selected.{extension}"
     )
-    output_dir = data_dir / "annotations" / f"round_{round_id}"
+    output_dir = Path(
+        config["teacher"].get("output_dir") or data_dir / "annotations" / f"round_{round_id}"
+    )
     output_path = output_dir / f"teacher.{extension}"
     metrics_path = output_dir / "job_metrics.json"
-    upstream_id = verified_manifest_id(
-        data_dir / "rollouts" / f"round_{round_id}" / "manifest.json"
-    )
+    upstream_id = verified_artifact_manifest_id(rollout_path)
     rollouts = [RolloutRecord.model_validate(row) for row in read_records(rollout_path)]
     annotator = _annotator(config)
     records: list[TeacherAnnotationRecord] = []
@@ -147,7 +147,7 @@ def annotate_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
         upstream_artifact_ids=[upstream_id],
         metadata={
             "round_id": round_id,
-            "top_k": int(config["teacher"].get("top_k", 32)),
+            "top_k": int(config["teacher"].get("top_k", 64)),
             "shard_size": shard_size,
             "shard_count": len(shard_files),
             "reused_shards": reused_shards,
@@ -156,4 +156,9 @@ def annotate_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
         },
     )
     save_manifest(output_dir / "manifest.json", manifest)
+    if failures:
+        raise RuntimeError(
+            f"Teacher annotation produced {failures} failed records; "
+            "rerun the stage after fixing the recorded errors"
+        )
     return output_path

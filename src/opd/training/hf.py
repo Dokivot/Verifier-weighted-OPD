@@ -75,6 +75,10 @@ class EarlyStopState:
         return False
 
 
+def _needs_final_validation(*, has_validation: bool, global_step: int, eval_steps: int) -> bool:
+    return has_validation and global_step > 0 and global_step % eval_steps != 0
+
+
 def _load_model(
     config: dict[str, Any], dependencies: dict[str, Any], accelerator: Any
 ) -> tuple[Any, Any]:
@@ -407,6 +411,8 @@ def train_hf(config: dict[str, Any]) -> Path:
         else []
     )
     eval_steps = int(early_config.get("eval_steps", 200))
+    if eval_steps <= 0:
+        raise ValueError("training.early_stopping.eval_steps must be positive")
     patience = int(early_config.get("patience", 3))
     min_delta = float(early_config.get("min_delta", 0.005))
     early_state = EarlyStopState()
@@ -436,11 +442,63 @@ def train_hf(config: dict[str, Any]) -> Path:
         resume_batch_in_epoch = int(saved_state.get("resume_batch_in_epoch", 0))
         history = [dict(item) for item in saved_state.get("history", [])]
     model.train()
+    next_resume_epoch = resume_epoch
+    next_resume_batch = resume_batch_in_epoch
+
+    def run_validation() -> None:
+        math_accuracy, format_pass_rate = _evaluate_math_validation(
+            accelerator.unwrap_model(model),
+            tokenizer,
+            validation,
+            device=accelerator.device,
+            max_samples=int(early_config.get("max_validation_samples", 200)),
+            max_new_tokens=int(early_config.get("max_new_tokens", 512)),
+        )
+        instruction_score = (
+            _evaluate_instruction_validation(
+                accelerator.unwrap_model(model),
+                tokenizer,
+                instruction_validation,
+                device=accelerator.device,
+                max_samples=int(early_config.get("max_instruction_validation_samples", 32)),
+                max_new_tokens=int(early_config.get("instruction_max_new_tokens", 128)),
+            )
+            if instruction_validation
+            else 0.0
+        )
+        weights = early_config.get(
+            "weights",
+            {
+                "math_accuracy": 0.8,
+                "format_pass_rate": 0.1,
+                "instruction": 0.1,
+            },
+        )
+        score = (
+            float(weights["math_accuracy"]) * math_accuracy
+            + float(weights["format_pass_rate"]) * format_pass_rate
+            + float(weights["instruction"]) * instruction_score
+        )
+        history[-1]["validation_accuracy"] = math_accuracy
+        history[-1]["format_pass_rate"] = format_pass_rate
+        history[-1]["instruction_regression_score"] = instruction_score
+        history[-1]["composite_score"] = score
+        improved = early_state.update(score, step=global_step, min_delta=min_delta)
+        if improved:
+            _save_checkpoint(
+                accelerator,
+                model,
+                tokenizer,
+                best_dir,
+                global_step=global_step,
+                early_state=early_state,
+                resume_epoch=next_resume_epoch,
+                resume_batch_in_epoch=next_resume_batch,
+                history=history,
+            )
 
     stop_training = global_step >= max_steps
     max_epochs = int(early_config.get("max_epochs_per_round", 1))
-    next_resume_epoch = resume_epoch
-    next_resume_batch = resume_batch_in_epoch
     for epoch in range(resume_epoch, max_epochs):
         if stop_training:
             break
@@ -551,58 +609,7 @@ def train_hf(config: dict[str, Any]) -> Path:
                         history=history,
                     )
                 if validation and global_step % eval_steps == 0:
-                    math_accuracy, format_pass_rate = _evaluate_math_validation(
-                        accelerator.unwrap_model(model),
-                        tokenizer,
-                        validation,
-                        device=accelerator.device,
-                        max_samples=int(early_config.get("max_validation_samples", 200)),
-                        max_new_tokens=int(early_config.get("max_new_tokens", 512)),
-                    )
-                    instruction_score = (
-                        _evaluate_instruction_validation(
-                            accelerator.unwrap_model(model),
-                            tokenizer,
-                            instruction_validation,
-                            device=accelerator.device,
-                            max_samples=int(
-                                early_config.get("max_instruction_validation_samples", 32)
-                            ),
-                            max_new_tokens=int(early_config.get("instruction_max_new_tokens", 128)),
-                        )
-                        if instruction_validation
-                        else 0.0
-                    )
-                    weights = early_config.get(
-                        "weights",
-                        {
-                            "math_accuracy": 0.8,
-                            "format_pass_rate": 0.1,
-                            "instruction": 0.1,
-                        },
-                    )
-                    score = (
-                        float(weights["math_accuracy"]) * math_accuracy
-                        + float(weights["format_pass_rate"]) * format_pass_rate
-                        + float(weights["instruction"]) * instruction_score
-                    )
-                    history[-1]["validation_accuracy"] = math_accuracy
-                    history[-1]["format_pass_rate"] = format_pass_rate
-                    history[-1]["instruction_regression_score"] = instruction_score
-                    history[-1]["composite_score"] = score
-                    improved = early_state.update(score, step=global_step, min_delta=min_delta)
-                    if improved:
-                        _save_checkpoint(
-                            accelerator,
-                            model,
-                            tokenizer,
-                            best_dir,
-                            global_step=global_step,
-                            early_state=early_state,
-                            resume_epoch=next_resume_epoch,
-                            resume_batch_in_epoch=next_resume_batch,
-                            history=history,
-                        )
+                    run_validation()
                     if early_state.stale_evaluations >= patience:
                         stop_training = True
                         break
@@ -611,6 +618,13 @@ def train_hf(config: dict[str, Any]) -> Path:
                     break
         if stop_training:
             break
+
+    if _needs_final_validation(
+        has_validation=bool(validation),
+        global_step=global_step,
+        eval_steps=eval_steps,
+    ):
+        run_validation()
 
     _save_checkpoint(
         accelerator,
@@ -623,6 +637,18 @@ def train_hf(config: dict[str, Any]) -> Path:
         resume_batch_in_epoch=next_resume_batch,
         history=history,
     )
+    if global_step > 0 and not best_dir.exists():
+        _save_checkpoint(
+            accelerator,
+            model,
+            tokenizer,
+            best_dir,
+            global_step=global_step,
+            early_state=early_state,
+            resume_epoch=next_resume_epoch,
+            resume_batch_in_epoch=next_resume_batch,
+            history=history,
+        )
     if accelerator.is_main_process:
         write_json(
             output_dir / "training_summary.json",

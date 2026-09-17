@@ -21,6 +21,10 @@ data/manifests/
 /checkpoints/
 wandb/
 mlruns/
+logs/
+backups/
+bootstrap.log
+reports/environment/
 *.safetensors
 *.pt
 *.pth

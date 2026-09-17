@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from opd.artifacts import build_manifest, save_manifest
 from opd.config import load_config
+from opd.data.annotation_selection import select_annotation_rollouts
 from opd.data.contamination import audit_contamination
 from opd.data.prepare import prepare_dataset
 from opd.evaluation.runner import evaluate
@@ -67,6 +68,7 @@ class SmokePipelineTest(unittest.TestCase):
             self.assertEqual(read_records(rollout_path), first_rows)
 
             verify_rollouts(config, round_id=0)
+            select_annotation_rollouts(config, round_id=0)
             annotate_rollouts(config, round_id=0)
             annotate_rollouts(config, round_id=0)
             teacher_manifest = read_json(root / "data/annotations/round_0/manifest.json")
@@ -87,6 +89,7 @@ class SmokePipelineTest(unittest.TestCase):
             audit_contamination(config)
             generate_rollouts(config, round_id=0)
             verify_rollouts(config, round_id=0)
+            select_annotation_rollouts(config, round_id=0)
             annotation_path = annotate_rollouts(config, round_id=0)
             rows = read_records(annotation_path)
             rows[0]["tokenizer_fingerprint"] = "different-vocabulary"
@@ -102,6 +105,36 @@ class SmokePipelineTest(unittest.TestCase):
             save_manifest(root / "data/annotations/round_0/manifest.json", manifest)
             with self.assertRaisesRegex(ValueError, "Tokenizer vocabulary mismatch"):
                 build_training_view(config, round_id=0, method="weighted_opd")
+
+    def test_teacher_annotation_fails_stage_after_recording_errors(self) -> None:
+        class FailingTeacher:
+            model_name = "failing-teacher"
+            model_revision = "failing-v1"
+            tokenizer_revision = "mock-tokenizer-v1"
+            tokenizer_fingerprint = "mock-tokenizer"
+
+            def annotate(self, prompt: str, response: str) -> dict[str, object]:
+                del prompt, response
+                raise RuntimeError("synthetic teacher failure")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = self._config(root)
+            prepare_dataset(config)
+            audit_contamination(config)
+            generate_rollouts(config, round_id=0)
+            verify_rollouts(config, round_id=0)
+            select_annotation_rollouts(config, round_id=0)
+
+            with (
+                patch("opd.teacher.pipeline._annotator", return_value=FailingTeacher()),
+                self.assertRaisesRegex(RuntimeError, "16 failed records"),
+            ):
+                annotate_rollouts(config, round_id=0)
+
+            manifest = read_json(root / "data/annotations/round_0/manifest.json")
+            self.assertEqual(manifest["failure_count"], 16)
+            self.assertEqual(manifest["success_count"], 0)
 
     def test_rollout_truncation_gate_stops_after_minimum_sample(self) -> None:
         class CappedBackend:

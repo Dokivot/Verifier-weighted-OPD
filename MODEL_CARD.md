@@ -2,18 +2,23 @@
 
 ## Model
 
-- Base Student: Qwen3-8B-class instruct model, exact revision recorded in the run manifest.
-- Teacher: same-tokenizer Qwen3-14B-class instruct/reasoning model.
+- Base Student: Qwen2.5-1.5B-Instruct, exact revision recorded in the run manifest.
+- Teacher: Qwen2.5-Math-7B-Instruct, exact revision recorded in the run manifest.
 - Adaptation: 4-bit QLoRA.
-- Training seed: 42 only.
+- Training seed: 42 only (recommended scheme one).
 
 ## Methods
 
-Report Base, SFT, Vanilla OPD, Verifier-only OPD, Confidence-only OPD and Verifier+Confidence Weighted OPD. Only Vanilla and Weighted are eligible for Round 1.
+The first resume MVP reports Base, SFT and VFS-Weighted OPD B50. The main method combines
+Verifier-First state acquisition, sample-level verifier weighting and token-level Teacher-entropy
+weighting. Later phases add Random-Budget B50, Dense OPD B100 and component ablations. Report the
+exact selected and actual Teacher tokens for every method.
 
 ## Evaluation
 
-Primary benchmarks are MATH-500 and AIME; GPQA Diamond and IFEval measure out-of-domain and instruction-following regression. Store per-item outputs and compare matched items with paired bootstrap and exact McNemar tests.
+The resume MVP benchmarks MATH-500, AIME 2024 and IFEval. After Random B50 is complete, the primary
+research comparison is VFS-Weighted B50 versus Random B50 under no greater actual Teacher tokens.
+Store per-item outputs and compare matched items with paired bootstrap and exact McNemar tests.
 
 ## Required Disclosure
 

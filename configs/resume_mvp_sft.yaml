@@ -1,0 +1,14 @@
+defaults: vfs_weighted_mvp.yaml
+
+project:
+  run_tier: resume-mvp-sft-baseline
+
+training:
+  method: sft
+  max_records: 3000
+  input_path: artifacts/resume_mvp/data/contamination/train_clean.parquet
+  output_dir: artifacts/resume_mvp/checkpoints/sft_seed42
+
+evaluation:
+  output_dir: artifacts/resume_mvp/evaluation/sft
+

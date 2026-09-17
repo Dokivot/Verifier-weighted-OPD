@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "opd-lab"
 version = "0.1.0"
-description = "Budget-aware verifier- and confidence-weighted on-policy distillation pipeline"
+description = "Verifier-first state-budgeted on-policy distillation pipeline"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [

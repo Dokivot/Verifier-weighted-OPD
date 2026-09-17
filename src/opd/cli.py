@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from opd.checkpoints.merge import merge_adapter
 from opd.checkpoints.promotion import evaluate_promotion
 from opd.config import load_config
+from opd.data.annotation_selection import select_annotation_rollouts
 from opd.data.contamination import audit_contamination
 from opd.data.eval_import import fetch_evaluation_data, import_evaluation_data
 from opd.data.prepare import prepare_dataset
@@ -63,6 +64,8 @@ def _parser() -> argparse.ArgumentParser:
     import_eval.add_argument("--input", required=True, dest="input_path")
     fetch_eval = data_sub.add_parser("fetch-eval")
     fetch_eval.add_argument("--name", required=True)
+    select_annotations = data_sub.add_parser("select-annotations")
+    select_annotations.add_argument("--round", type=int, default=0, dest="round_id")
     build_view = data_sub.add_parser("build-view")
     build_view.add_argument("--round", type=int, default=0, dest="round_id")
     build_view.add_argument(
@@ -95,7 +98,8 @@ def _parser() -> argparse.ArgumentParser:
     teacher_annotate = teacher_sub.add_parser("annotate")
     teacher_annotate.add_argument("--round", type=int, default=0, dest="round_id")
 
-    subparsers.add_parser("train")
+    training = subparsers.add_parser("train")
+    training.add_argument("--resume-from-checkpoint")
 
     evaluation = subparsers.add_parser("evaluate")
     evaluation.add_argument("--suite", default="smoke")
@@ -172,6 +176,8 @@ def main(argv: list[str] | None = None) -> None:
             result = import_evaluation_data(config, name=args.name, input_path=args.input_path)
         elif args.command == "data" and args.data_command == "fetch-eval":
             result = fetch_evaluation_data(config, name=args.name)
+        elif args.command == "data" and args.data_command == "select-annotations":
+            result = select_annotation_rollouts(config, round_id=args.round_id)
         elif args.command == "data" and args.data_command == "build-view":
             result = build_training_view(
                 config,
@@ -185,7 +191,10 @@ def main(argv: list[str] | None = None) -> None:
         elif args.command == "teacher" and args.teacher_command == "annotate":
             result = annotate_rollouts(config, round_id=args.round_id)
         elif args.command == "train":
-            result = train(config)
+            training_config = deepcopy(config)
+            if args.resume_from_checkpoint:
+                training_config["training"]["resume_from_checkpoint"] = args.resume_from_checkpoint
+            result = train(training_config)
         elif args.command == "evaluate":
             evaluation_config = deepcopy(config)
             if args.checkpoint:

@@ -1,0 +1,16 @@
+defaults: vfs_b50.yaml
+
+annotation_selection:
+  strategy: random_budget
+  output_dir: artifacts/data/annotation_selection/random_b50/round_0
+
+training_view:
+  selection_path: artifacts/data/annotation_selection/random_b50/round_0/selected.parquet
+  output_name: random_b50
+
+training:
+  input_path: artifacts/data/training_views/round_0/random_b50.parquet
+  output_dir: checkpoints/random_b50_seed42
+
+evaluation:
+  output_dir: artifacts/evaluation/random_b50

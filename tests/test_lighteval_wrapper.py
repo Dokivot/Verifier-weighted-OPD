@@ -88,7 +88,7 @@ class LightEvalWrapperTest(unittest.TestCase):
                     task_names=["math500"],
                 )
             command = read_json(output / "command.json")["command"]
-            self.assertIn("max_model_length=40960", command[2])
+            self.assertIn("max_model_length=8192", command[2])
             max_samples_index = command.index("--max-samples")
             self.assertEqual(command[max_samples_index + 1], "2")
 

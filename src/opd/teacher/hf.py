@@ -14,7 +14,7 @@ class HFTeacherAnnotator:
     model_name: str
     model_revision: str
     tokenizer_revision: str
-    top_k: int = 32
+    top_k: int = 64
     dtype: str = "bfloat16"
     load_in_8bit: bool = False
     max_length: int = 2048
