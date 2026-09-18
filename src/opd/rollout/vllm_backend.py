@@ -7,6 +7,7 @@ from typing import Any
 from opd.exceptions import DependencyError
 from opd.prompts import render_user_prompt
 from opd.rollout.base import Generation
+from opd.rollout.stop_tokens import generation_stop_token_ids
 from opd.tokenizers import tokenizer_fingerprint
 
 
@@ -40,6 +41,7 @@ class VLLMRolloutBackend:
             model_arguments["revision"] = self.model_revision
         self._llm = LLM(**model_arguments)
         self._tokenizer = self._llm.get_tokenizer()
+        self._stop_token_ids = generation_stop_token_ids(self._tokenizer)
         self.tokenizer_fingerprint = tokenizer_fingerprint(self._tokenizer)
 
     def generate(self, prompts: list[str], *, seed: int) -> list[Generation]:
@@ -50,6 +52,7 @@ class VLLMRolloutBackend:
             max_tokens=int(self.generation_config.get("max_new_tokens", 1024)),
             seed=seed,
             skip_special_tokens=bool(self.generation_config.get("skip_special_tokens", False)),
+            stop_token_ids=list(self._stop_token_ids),
         )
         thinking_value = self.generation_config.get("enable_thinking")
         enable_thinking = bool(thinking_value) if thinking_value is not None else None
@@ -72,6 +75,7 @@ class VLLMRolloutBackend:
                     text=candidate.text,
                     prompt_tokens=len(output.prompt_token_ids),
                     response_tokens=len(candidate.token_ids),
+                    finish_reason=str(getattr(candidate, "finish_reason", None) or "unknown"),
                 )
             )
         return generations

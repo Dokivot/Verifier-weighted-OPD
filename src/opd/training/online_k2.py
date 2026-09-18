@@ -4,7 +4,6 @@ import math
 import os
 import random
 import shutil
-from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from time import perf_counter
@@ -13,6 +12,7 @@ from typing import Any
 import numpy as np
 
 from opd.artifacts import verified_artifact_manifest_id
+from opd.config import config_hash, normalized_online_training_config
 from opd.hashing import file_sha256, stable_hash
 from opd.prompts import render_user_prompt
 from opd.schemas import PromptRecord
@@ -33,19 +33,6 @@ class OnlineTrajectory:
     truncated: bool
     finish_reason: str
     terminal_token_id: int | None
-
-
-_OPERATIONAL_TRAINING_KEYS = {
-    "invocation_step_limit",
-    "resume_from_checkpoint",
-}
-
-
-def normalized_online_training_config(training: dict[str, Any]) -> dict[str, Any]:
-    normalized = deepcopy(training)
-    for key in _OPERATIONAL_TRAINING_KEYS:
-        normalized.pop(key, None)
-    return normalized
 
 
 def online_run_id(
@@ -146,12 +133,16 @@ def _encode_prompts(
     )
     max_prompt_tokens = int(training["max_prompt_tokens"])
     enable_thinking = bool(training.get("enable_thinking", False))
+    thinking_marker = training.get("thinking_marker")
+    if thinking_marker is not None and not isinstance(thinking_marker, str):
+        raise ValueError("training.thinking_marker must be a string when configured")
     for record in prompts:
         problem = _format_problem(record.problem, prompt_template)
         rendered = render_user_prompt(
             tokenizer,
             problem,
             enable_thinking=enable_thinking,
+            thinking_marker=thinking_marker,
         )
         token_ids = list(tokenizer.encode(rendered, add_special_tokens=True))
         if not token_ids:
@@ -699,6 +690,21 @@ def train_online_k2(config: dict[str, Any]) -> Path:
         torch,
         str(training.get("master_parameter_dtype", "float32")),
     )
+    properties = torch.cuda.get_device_properties(device)
+    hardware = {
+        "gpu_count": int(torch.cuda.device_count()),
+        "device_index": int(device.index or 0),
+        "device_name": str(torch.cuda.get_device_name(device)),
+        "total_memory_gib": float(properties.total_memory) / (1024**3),
+        "compute_capability": [int(properties.major), int(properties.minor)],
+        "compiled_architectures": list(torch.cuda.get_arch_list()),
+        "torch_version": str(torch.__version__),
+        "torch_cuda": str(torch.version.cuda or "unknown"),
+        "device": str(device),
+        "dtype": str(training.get("dtype", "bfloat16")),
+        "master_parameter_dtype": str(training.get("master_parameter_dtype", "float32")),
+    }
+    hardware_fingerprint = stable_hash(hardware, length=24)
     input_path = Path(training["input_path"])
     if bool(training.get("require_decontaminated_input", False)):
         expected_clean_path = (
@@ -1036,6 +1042,8 @@ def train_online_k2(config: dict[str, Any]) -> Path:
         )
         step_metrics = {
             "step": step,
+            "run_id": run_id,
+            "hardware_fingerprint": hardware_fingerprint,
             "data_cursor_start": data_cursor,
             "records": len(rows),
             "response_tokens": total_response_tokens,
@@ -1116,6 +1124,7 @@ def train_online_k2(config: dict[str, Any]) -> Path:
         output_dir / "training_summary.json",
         {
             "status": "completed" if completed else "paused",
+            "config_hash": config_hash(config),
             "method": training["method"],
             "parameter_update_mode": "full_parameter",
             "master_parameter_dtype": str(training.get("master_parameter_dtype", "float32")),
@@ -1130,9 +1139,35 @@ def train_online_k2(config: dict[str, Any]) -> Path:
             "final_policy_hash": policy_hash,
             "student_tokenizer_fingerprint": student_fingerprint,
             "teacher_tokenizer_fingerprint": teacher_fingerprint,
+            "hardware": hardware,
+            "hardware_fingerprint": hardware_fingerprint,
+            "model_identity": {
+                "student_name": student_config["name"],
+                "student_revision": student_config["revision"],
+                "student_tokenizer_revision": student_config.get(
+                    "tokenizer_revision", student_config["revision"]
+                ),
+                "teacher_name": teacher_config["name"],
+                "teacher_revision": teacher_config["revision"],
+                "teacher_tokenizer_revision": teacher_config.get(
+                    "tokenizer_revision", teacher_config["revision"]
+                ),
+            },
+            "input_path": str(input_path),
+            "input_checksum": input_checksum,
             "history": history,
             "seed": seed,
             "run_id": run_id,
+            "generation_protocol": {
+                "temperature": float(training.get("temperature", 1.0)),
+                "top_p": float(training.get("top_p", 1.0)),
+                "top_k": int(training.get("top_k", 0)),
+                "max_new_tokens": int(training["max_response_tokens"]),
+                "max_model_length": int(training["max_model_length"]),
+                "enable_thinking": bool(training.get("enable_thinking", False)),
+                "thinking_marker": training.get("thinking_marker"),
+                "chat_template": "tokenizer_default_if_available",
+            },
         },
     )
     return checkpoint_dir

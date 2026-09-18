@@ -10,7 +10,7 @@ from opd.artifacts import (
     verified_artifact_manifest_id,
     verified_manifest_id,
 )
-from opd.schemas import PromptRecord, RolloutRecord
+from opd.schemas import PromptRecord, RecordStatus, RolloutRecord
 from opd.tableio import read_records, write_records
 from opd.verifier.math import MathVerifier
 
@@ -25,8 +25,11 @@ def verify_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
         config["verification"].get("rollout_path")
         or data_dir / "rollouts" / f"round_{round_id}" / f"rollouts.{extension}"
     )
+    verification_config = config["verification"]
     output_dir = Path(
-        config["verification"].get("output_dir") or data_dir / "verifications" / f"round_{round_id}"
+        verification_config.get("internal_output_dir")
+        or verification_config.get("output_dir")
+        or data_dir / "internal_verifier" / f"round_{round_id}"
     )
     output_path = output_dir / f"math.{extension}"
     prompt_manifest_id = (
@@ -54,12 +57,21 @@ def verify_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
             response=rollout.response,
             reference_answer=prompt.reference_answer,
         )
-        results.append(result)
+        results.append(
+            result.model_copy(
+                update={
+                    "finish_reason": rollout.finish_reason,
+                    "truncated": rollout.finish_reason == "length"
+                    or rollout.status == RecordStatus.TRUNCATED,
+                }
+            )
+        )
     write_records(output_path, [result.model_dump(mode="json") for result in results])
     counts = Counter(result.status.value for result in results)
     extraction_modes = Counter(
         str(result.details.get("extraction_mode", "unknown")) for result in results
     )
+    truncated_count = sum(result.truncated for result in results)
     manifest = build_manifest(
         artifact_type="verification",
         stage="verify.math",
@@ -74,6 +86,7 @@ def verify_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
             "verifier_version": verifier.version,
             "status_counts": dict(counts),
             "extraction_mode_counts": dict(extraction_modes),
+            "truncated_records": truncated_count,
         },
     )
     save_manifest(output_dir / "manifest.json", manifest)

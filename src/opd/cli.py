@@ -23,11 +23,13 @@ from opd.exceptions import OPDError
 from opd.monitoring.budget import check_budget
 from opd.reporting.analysis import build_cost_pareto, build_failure_analysis
 from opd.reporting.build import build_report
+from opd.reporting.ood import build_ood_regression
 from opd.rollout.pipeline import generate_rollouts
 from opd.teacher.pipeline import annotate_rollouts
 from opd.training.audit import audit_sparse_kl
 from opd.training.pipeline import train
 from opd.training.views import build_training_view
+from opd.verifier.calibration import calibrate_verifier
 from opd.verifier.pipeline import verify_rollouts
 
 
@@ -93,6 +95,16 @@ def _parser() -> argparse.ArgumentParser:
     verify_math = verify_sub.add_parser("math")
     verify_math.add_argument("--round", type=int, default=0, dest="round_id")
 
+    verifier = subparsers.add_parser("verifier")
+    verifier_sub = verifier.add_subparsers(dest="verifier_command", required=True)
+    calibrate = verifier_sub.add_parser("calibrate")
+    calibrate.add_argument("--verification", required=True)
+    calibrate.add_argument("--rollouts", required=True)
+    calibrate.add_argument("--output-dir", required=True)
+    calibrate.add_argument("--labels")
+    calibrate.add_argument("--samples-per-stratum", type=int, default=20)
+    calibrate.add_argument("--seed", type=int)
+
     teacher = subparsers.add_parser("teacher")
     teacher_sub = teacher.add_subparsers(dest="teacher_command", required=True)
     teacher_annotate = teacher_sub.add_parser("annotate")
@@ -129,6 +141,15 @@ def _parser() -> argparse.ArgumentParser:
     report_failures.add_argument("--output", required=True)
     report_cost = report_sub.add_parser("cost")
     report_cost.add_argument("--output-dir", required=True)
+    report_ood = report_sub.add_parser("ood")
+    report_ood.add_argument("--baseline", required=True)
+    report_ood.add_argument(
+        "--candidate",
+        action="append",
+        required=True,
+        help="Candidate in NAME=LIGHTEVAL_OUTPUT_DIR form; repeat for multiple candidates",
+    )
+    report_ood.add_argument("--output", required=True)
     return parser
 
 
@@ -189,6 +210,16 @@ def main(argv: list[str] | None = None) -> None:
             result = generate_rollouts(config, round_id=args.round_id)
         elif args.command == "verify" and args.verify_command == "math":
             result = verify_rollouts(config, round_id=args.round_id)
+        elif args.command == "verifier" and args.verifier_command == "calibrate":
+            result = calibrate_verifier(
+                config,
+                verification_path=args.verification,
+                rollout_path=args.rollouts,
+                output_dir=args.output_dir,
+                labels_path=args.labels,
+                samples_per_stratum=args.samples_per_stratum,
+                seed=args.seed,
+            )
         elif args.command == "teacher" and args.teacher_command == "annotate":
             result = annotate_rollouts(config, round_id=args.round_id)
         elif args.command == "train":
@@ -221,6 +252,21 @@ def main(argv: list[str] | None = None) -> None:
             result = build_failure_analysis(config, args.predictions, args.output)
         elif args.command == "report" and args.report_command == "cost":
             result = build_cost_pareto(config, args.output_dir)
+        elif args.command == "report" and args.report_command == "ood":
+            candidate_dirs: dict[str, str | Path] = {}
+            for candidate in args.candidate:
+                name, separator, path = candidate.partition("=")
+                if not separator or not name or not path:
+                    raise ValueError("--candidate must use NAME=LIGHTEVAL_OUTPUT_DIR")
+                if name in candidate_dirs:
+                    raise ValueError(f"Duplicate OOD candidate name: {name}")
+                candidate_dirs[name] = path
+            result = build_ood_regression(
+                config,
+                baseline_dir=args.baseline,
+                candidate_dirs=candidate_dirs,
+                output_path=args.output,
+            )
         else:
             parser.error("Unsupported command")
             return

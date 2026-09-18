@@ -164,7 +164,9 @@ def select_annotation_rollouts(config: dict[str, Any], *, round_id: int) -> Path
     )
     verification_path = Path(
         selection.get("verification_path")
-        or data_dir / "verifications" / f"round_{round_id}" / f"math.{extension}"
+        or config.get("verification", {}).get("internal_output_dir")
+        or config.get("verification", {}).get("output_dir")
+        or data_dir / "internal_verifier" / f"round_{round_id}" / f"math.{extension}"
     )
     prompt_path = Path(
         selection.get("prompt_path")

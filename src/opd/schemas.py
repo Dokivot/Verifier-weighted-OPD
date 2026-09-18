@@ -59,6 +59,7 @@ class RolloutRecord(StrictModel):
     seed: int
     prompt_tokens: int = Field(ge=0)
     response_tokens: int = Field(ge=0)
+    finish_reason: str = "unknown"
     latency_ms: int = Field(ge=0)
     status: RecordStatus = RecordStatus.SUCCESS
     error: str | None = None
@@ -73,6 +74,8 @@ class VerificationRecord(StrictModel):
     score: float = Field(ge=0.0, le=1.0)
     reference_answer: str
     extracted_answer: str | None = None
+    finish_reason: str = "unknown"
+    truncated: bool = False
     error_type: str | None = None
     details: dict[str, Any] = Field(default_factory=dict)
 

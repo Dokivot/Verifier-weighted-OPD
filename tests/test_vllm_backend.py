@@ -10,8 +10,14 @@ from opd.rollout.vllm_backend import VLLMRolloutBackend
 
 
 class _Tokenizer:
+    eos_token_id = 151643
+    unk_token_id = 0
+
     def get_vocab(self) -> dict[str, int]:
         return {"<eos>": 0, "hello": 1}
+
+    def convert_tokens_to_ids(self, token: str) -> int:
+        return {"<|im_end|>": 151645, "<|endoftext|>": 151643}.get(token, 0)
 
     def apply_chat_template(
         self,
@@ -46,7 +52,9 @@ class VLLMBackendTest(unittest.TestCase):
                 return [
                     SimpleNamespace(
                         prompt_token_ids=[1, 2],
-                        outputs=[SimpleNamespace(text="answer", token_ids=[3])],
+                        outputs=[
+                            SimpleNamespace(text="answer", token_ids=[3], finish_reason="stop")
+                        ],
                     )
                 ]
 
@@ -94,9 +102,11 @@ class VLLMBackendTest(unittest.TestCase):
                 "max_tokens": 512,
                 "seed": 42,
                 "skip_special_tokens": False,
+                "stop_token_ids": [151643, 151645],
             },
         )
         self.assertEqual(generations[0].text, "answer")
+        self.assertEqual(generations[0].finish_reason, "stop")
 
 
 if __name__ == "__main__":

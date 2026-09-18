@@ -25,7 +25,13 @@ def _evaluation_prompt(problem: str, evaluation: dict[str, Any]) -> str:
     template = str(evaluation.get("prompt_template", "{problem}"))
     if "{problem}" not in template:
         raise ValueError("evaluation.prompt_template must contain {problem}")
-    return template.format(problem=problem)
+    prompt = template.format(problem=problem)
+    thinking_marker = evaluation.get("generation", {}).get("thinking_marker")
+    if thinking_marker:
+        if not isinstance(thinking_marker, str):
+            raise ValueError("evaluation.generation.thinking_marker must be a string")
+        prompt = f"{prompt.rstrip()}\n{thinking_marker}"
+    return prompt
 
 
 def _backend(config: dict[str, Any]) -> Any:
@@ -152,8 +158,8 @@ def evaluate(config: dict[str, Any], *, suite: str) -> Path:
                             "status": verification.status.value,
                             "extracted_answer": verification.extracted_answer,
                             "response_tokens": generation.response_tokens,
-                            "truncated": generation.response_tokens
-                            >= int(evaluation["generation"]["max_new_tokens"]),
+                            "finish_reason": generation.finish_reason,
+                            "truncated": generation.finish_reason == "length",
                             "latency_ms": max(1, elapsed_ms // max(1, len(batch))),
                         }
                     )
@@ -191,6 +197,7 @@ def evaluate(config: dict[str, Any], *, suite: str) -> Path:
         "status_counts": dict(Counter(str(row["status"]) for row in rows)),
         "truncated_records": truncated_records,
         "truncation_rate": truncated_records / max(1, len(rows)),
+        "finish_reason_counts": dict(Counter(str(row["finish_reason"]) for row in rows)),
         "mean_response_tokens": sum(int(row["response_tokens"]) for row in rows)
         / max(1, len(rows)),
         "by_subject": {
@@ -200,6 +207,16 @@ def evaluate(config: dict[str, Any], *, suite: str) -> Path:
             key: sum(values) / len(values) for key, values in sorted(by_difficulty.items())
         },
         "predictions_path": str(output_path),
+        "generation_protocol": {
+            "temperature": float(evaluation.get("generation", {}).get("temperature", 0.0)),
+            "top_p": float(evaluation.get("generation", {}).get("top_p", 1.0)),
+            "top_k": int(evaluation.get("generation", {}).get("top_k", -1)),
+            "max_new_tokens": int(evaluation.get("generation", {}).get("max_new_tokens", 512)),
+            "max_model_length": int(evaluation.get("max_model_length", 4096)),
+            "enable_thinking": bool(evaluation.get("generation", {}).get("enable_thinking", False)),
+            "thinking_marker": evaluation.get("generation", {}).get("thinking_marker"),
+            "chat_template": "tokenizer_default_if_available",
+        },
     }
     write_json(summary_path, summary)
     manifest = build_manifest(
@@ -216,6 +233,7 @@ def evaluate(config: dict[str, Any], *, suite: str) -> Path:
             "model_revision": backend.model_revision,
             "tokenizer_revision": backend.tokenizer_revision,
             "experiment_seed": seed,
+            "generation_protocol": summary["generation_protocol"],
         },
     )
     save_manifest(output_dir / "manifest.json", manifest)

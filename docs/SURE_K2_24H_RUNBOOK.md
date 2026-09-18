@@ -143,9 +143,25 @@ pilot 脚本会自动写入 `pilot_budget_report.json`：以 step 2 的稳态耗
 不要改 global batch、模型、loss 或长度。若截断率超过 20%，不要开始正式实验，先保留 quality gate JSON
 并分析 EOS/template。
 
+pilot 完成后、正式训练前，单独运行统一准入 gate：
+
+```bash
+uv run --no-sync python scripts/validate_sure_k2_readiness.py \
+  --config configs/sure_k2_24h.yaml \
+  2>&1 | tee logs/07_sure_k2_readiness.log
+cat artifacts/sure_k2_24h/reports/readiness/readiness_report.json
+```
+
+该 gate 会逐项验证：训练与评测数据的 manifest checksum、record count 和 pinned revision；去污染输入、
+输出及上游 manifest 链；Base 评测和 IFEval 的 generation protocol；smoke/pilot 的 resolved config、
+Student/Teacher revision、dtype、单卡 RTX PRO 6000 Blackwell 硬件指纹；以及正式训练中模型、优化器、
+rolling checkpoint 原子替换、milestone/final checkpoint 和 reserve artifacts 的峰值磁盘空间。报告为
+`failed` 时不得设置 `SKIP_READINESS_CHECK=1` 开始正式实验。修改数据 revision、模型 revision、评测协议或
+artifact 路径后，必须重新生成受影响 stage，旧 manifest 不会被自动复用。
+
 ## 7. 正式运行
 
-数据准备、fetch 和去污染审计完成后，才可以从 stage 20 开始：
+完整首次运行应从 stage 10 开始，让 Base 评测发生在训练之前：
 
 ```bash
 tmux new -s sure-k2
@@ -153,16 +169,29 @@ cd /root/autodl-tmp/OPDProj
 source scripts/autodl_env.sh
 set -o pipefail
 
-START_STAGE=20 scripts/run_sure_k2_24h.sh \
+START_STAGE=10 scripts/run_sure_k2_24h.sh \
   2>&1 | tee logs/10_sure_k2_24h.log
 ```
 
-该脚本会拒绝开始训练，直到以下工件同时有效：去污染 manifest、真实模型 smoke 的 completed summary，
-以及 2-step pilot 的 passed 预算报告。仅用于开发排障时才可设置 `SKIP_READINESS_CHECK=1`；该开关禁止
-用于正式实验及其报告。
+脚本顺序是：prepare → fetch benchmark → contamination audit → Base MATH-500/AMC23/IFEval →
+55-step SuRe 训练 → SuRe MATH-500/AMC23/IFEval → 比较报告。脚本会拒绝开始训练，直到去污染 manifest、
+真实模型 smoke、2-step pilot、Base MATH-500、Base AMC23 和 Base IFEval 都有效。仅用于开发排障时才可设置
+`SKIP_READINESS_CHECK=1`；该开关禁止用于正式实验及其报告。
 
-脚本顺序是：55-step SuRe 训练 → Base MATH-500 → Base AMC23 → SuRe MATH-500 → SuRe AMC23 →
-两份比较报告。不要同时启动第二个正式训练进程。
+如果已经完成 stage 10–16，恢复训练才使用 `START_STAGE=20`；不要在全新目录直接跳过 Base 评测。
+不要同时启动第二个正式训练进程。
+
+IFEval 是数学以外的 instruction-following 回归集，用于检查数学训练是否损害通用指令遵循能力。原始
+LightEval 结果保存在：
+
+```text
+artifacts/sure_k2_24h/benchmark/base/
+artifacts/sure_k2_24h/benchmark/sure_k2/
+```
+
+其中的 `command.json`、`manifest.json`、结果 JSON 和 details 文件必须全部保留。重点比较 Base 与 SuRe
+的 `IFEval prompt-level strict accuracy`，同时记录两次评测的模型 revision、seed、max model length 和
+任务标识；不要只保留一个汇总数字。
 
 按 `Ctrl+B`、再按 `D` 退出 tmux，不会停止任务。重新连接：
 
@@ -170,7 +199,43 @@ START_STAGE=20 scripts/run_sure_k2_24h.sh \
 tmux attach -t sure-k2
 ```
 
-## 8. 实时监控
+## 8. Verifier 校准与指标边界
+
+项目内部的 `MathVerifier` 只用于 rollout 质量门禁、数据分层和训练诊断，不能替代 MATH-500 的官方
+benchmark 分数。正式数学主结果读取 `benchmark/base_math500` 和 `benchmark/sure_k2_math500`；
+`evaluation/internal_verifier/*` 的结果必须在报告中单独标为内部 verifier 指标。
+
+对真实 rollout 做固定 seed 的分层人工复核：
+
+```bash
+uv run --no-sync opd verifier calibrate \
+  --config configs/sure_k2_24h.yaml \
+  --verification artifacts/sure_k2_24h/data/internal_verifier/round_0/math.parquet \
+  --rollouts artifacts/sure_k2_24h/data/rollouts/round_0/rollouts.parquet \
+  --output-dir artifacts/sure_k2_24h/reports/verifier_calibration \
+  --samples-per-stratum 20
+```
+
+第一次运行只生成 `review_queue.jsonl`，并将 `calibration_report.json` 标记为
+`awaiting_manual_labels`。人工逐行补充一个 `human_status`（只能是 `pass`、`fail` 或 `unknown`），
+并可填写 `human_error_type`、`reviewer`、`notes`；不要把 `truncated` 当成人工 status：它是独立的
+抽样分层。将补充后的文件保存为 `human_labels.jsonl`，然后运行：
+
+```bash
+uv run --no-sync opd verifier calibrate \
+  --config configs/sure_k2_24h.yaml \
+  --verification artifacts/sure_k2_24h/data/internal_verifier/round_0/math.parquet \
+  --rollouts artifacts/sure_k2_24h/data/rollouts/round_0/rollouts.parquet \
+  --output-dir artifacts/sure_k2_24h/reports/verifier_calibration \
+  --labels artifacts/sure_k2_24h/reports/verifier_calibration/human_labels.jsonl \
+  --samples-per-stratum 20
+```
+
+最终保留 `review_queue.jsonl`、`human_labels.jsonl`、`calibration_report.json`、
+`disagreements.jsonl` 和 `manifest.json`。没有完整人工标签时，不得在简历或正式报告中声称 verifier
+accuracy/precision/recall；内部 verifier 的 pass/fail/unknown 也不得与官方 benchmark accuracy 混为一谈。
+
+## 9. 实时监控
 
 新开一个终端：
 
@@ -195,7 +260,7 @@ cat "$latest"
 不要求单调下降，但不能出现 NaN/Inf，weight 必须在 `[1,2]`；若 `<|im_end|>` 已作为 stop 但 length
 结束比例仍高，禁止继续正式训练。
 
-## 9. 暂停与恢复
+## 10. 暂停与恢复
 
 最安全的主动暂停方式是等一个新 `step_XXXXXX.json` 和 rolling checkpoint 写完后，再在训练终端按
 `Ctrl+C`。不要在屏幕显示正在保存 checkpoint 时关机。
@@ -216,30 +281,35 @@ scripts/run_sure_k2_24h.sh \
 恢复会校验 data checksum、run ID、连续 step 文件和 policy hash chain。已提交 step 不会重跑。若上次
 恰好在 step Parquet 写完、rolling 尚未提交时中断，程序会拒绝自动猜测；保留现场并分析，不要手删文件。
 
-## 10. 单独重跑评测
+## 11. 单独重跑评测
 
 训练已经完成但评测失败时，不要重训。按失败位置设置：
 
 ```bash
-START_STAGE=30 scripts/run_sure_k2_24h.sh 2>&1 | tee logs/11_eval_retry.log
+START_STAGE=14 scripts/run_sure_k2_24h.sh 2>&1 | tee logs/11_eval_retry.log
 ```
 
-`30` 从 Base MATH 开始，`31` 从 Base AMC 开始，`40` 从 SuRe MATH 开始，`41` 从 SuRe AMC 开始，
-`50` 只重建比较报告。
+`14` 从 Base MATH 开始，`15` 从 Base AMC 开始，`16` 从 Base IFEval 开始，`40` 从 SuRe MATH 开始，
+`41` 从 SuRe AMC 开始，`42` 从 SuRe IFEval 开始，`50` 重建 paired comparison、IFEval 回归门禁和最终
+experiment report。重新训练前必须确认 Base 评测和 Base IFEval 已经存在。
 
 最终重点文件：
 
 ```text
 artifacts/sure_k2_24h/checkpoints/sure_k2_seed42/training_summary.json
-artifacts/sure_k2_24h/evaluation/base/math500/summary.json
-artifacts/sure_k2_24h/evaluation/base/amc23/summary.json
-artifacts/sure_k2_24h/evaluation/sure_k2/math500/summary.json
-artifacts/sure_k2_24h/evaluation/sure_k2/amc23/summary.json
+artifacts/sure_k2_24h/evaluation/internal_verifier/base/math500/summary.json
+artifacts/sure_k2_24h/evaluation/internal_verifier/base/amc23/summary.json
+artifacts/sure_k2_24h/evaluation/internal_verifier/sure_k2/math500/summary.json
+artifacts/sure_k2_24h/evaluation/internal_verifier/sure_k2/amc23/summary.json
+artifacts/sure_k2_24h/benchmark/base/
+artifacts/sure_k2_24h/benchmark/sure_k2/
+artifacts/sure_k2_24h/reports/ood_regression.json
+artifacts/sure_k2_24h/reports/sure_k2_24h.json
 artifacts/sure_k2_24h/reports/math500_base_vs_sure.json
 artifacts/sure_k2_24h/reports/amc23_base_vs_sure.json
 ```
 
-## 11. 关机前备份
+## 12. 关机前备份
 
 AutoDL 系统盘可能随实例释放丢失。至少把以下内容打包到数据盘，再下载到 Mac 或上传对象存储：
 
@@ -248,6 +318,7 @@ tar -czf /root/autodl-tmp/sure_k2_results_$(date +%Y%m%d_%H%M%S).tar.gz \
   artifacts/sure_k2_24h/checkpoints/sure_k2_seed42/training_summary.json \
   artifacts/sure_k2_24h/checkpoints/sure_k2_seed42/telemetry \
   artifacts/sure_k2_24h/evaluation \
+  artifacts/sure_k2_24h/benchmark \
   artifacts/sure_k2_24h/reports \
   logs/sure_k2_24h \
   configs/sure_k2_24h.yaml \

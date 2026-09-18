@@ -72,8 +72,10 @@ verifier 变成 process verifier。
 
 ## 3. 当前实验如何处理
 
-当前正在训练的 MVP 使用 v1 verification、selection 和 Teacher annotation，**不要中途替换这些
-artifact，也不要覆盖原路径**。它应作为 `Verifier-v1 VFS-Weighted` 完整跑完并保留。
+旧的 VFS-Weighted MVP 使用 v1 verification、selection 和 Teacher annotation，**不要中途替换这些
+artifact，也不要覆盖原路径**。它应作为 `Verifier-v1 VFS-Weighted` 完整跑完并保留。新的 SuRe K2
+流程默认将 verifier 输出写入 `data/internal_verifier/round_N`，与官方 LightEval benchmark 目录分离；
+显式配置 `verification.output_dir` 的 legacy run 仍按原路径读取。
 
 训练结束后可在同一批 rollout 上执行只消耗 CPU 的离线审计：
 
@@ -99,6 +101,20 @@ artifacts/resume_mvp/audits/verifier_v2/round_0/manifest.json
 ```text
 artifacts/resume_mvp/data/verifications/round_0/math.parquet
 ```
+
+对新流程的人工校准使用：
+
+```bash
+uv run --no-sync opd verifier calibrate \
+  --config configs/sure_k2_24h.yaml \
+  --verification artifacts/sure_k2_24h/data/internal_verifier/round_0/math.parquet \
+  --rollouts artifacts/sure_k2_24h/data/rollouts/round_0/rollouts.parquet \
+  --output-dir artifacts/sure_k2_24h/reports/verifier_calibration \
+  --samples-per-stratum 20
+```
+
+该命令先生成分层人工复核队列；只有提供完整人工标签后，才会生成 precision/recall 和 confusion
+matrix。`internal_verifier` 指标只用于训练诊断，MATH-500 主结果必须来自官方 LightEval 产物。
 
 ## 4. 审计判据
 

@@ -201,12 +201,14 @@ def generate_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
                         response = generation.text
                         prompt_tokens = generation.prompt_tokens
                         response_tokens = generation.response_tokens
+                        finish_reason = generation.finish_reason
                         status = RecordStatus.SUCCESS
                         error = None
                     else:
                         response = ""
                         prompt_tokens = 0
                         response_tokens = 0
+                        finish_reason = "error"
                         status = RecordStatus.FAILED
                         error = str(generation_error)
                         failures += 1
@@ -225,6 +227,7 @@ def generate_rollouts(config: dict[str, Any], *, round_id: int) -> Path:
                         seed=shard_seed,
                         prompt_tokens=prompt_tokens,
                         response_tokens=response_tokens,
+                        finish_reason=finish_reason,
                         latency_ms=max(1, batch_latency // max(1, len(repeated))),
                         status=status,
                         error=error,

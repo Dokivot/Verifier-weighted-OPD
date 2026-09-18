@@ -9,6 +9,7 @@ class Generation:
     text: str
     prompt_tokens: int
     response_tokens: int
+    finish_reason: str = "unknown"
 
 
 class RolloutBackend(Protocol):

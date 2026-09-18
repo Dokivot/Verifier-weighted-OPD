@@ -35,6 +35,11 @@ class LightEvalWrapperTest(unittest.TestCase):
             self.assertEqual(manifest["metadata"]["task_names"], ["math500"])
             command = read_json(output / "command.json")["command"]
             self.assertIn("model_name=remote/model", command[2])
+            self.assertIn(
+                "generation_parameters={max_new_tokens:4096,temperature:0.7,top_p:0.9,seed:42}",
+                command[2],
+            )
+            self.assertNotIn("generation_parameters.max_new_tokens", command[2])
             self.assertNotIn("pretrained=", command[2])
             self.assertIn("--use-chat-template", command)
             self.assertIn("--save-details", command)
@@ -43,6 +48,12 @@ class LightEvalWrapperTest(unittest.TestCase):
             self.assertEqual(command[custom_index + 1], "opd.evaluation.lighteval_tasks")
             self.assertTrue((output / "job_metrics.json").exists())
             self.assertTrue((output / "command.json").exists())
+            command_record = read_json(output / "command.json")
+            self.assertEqual(command_record["generation_protocol"]["max_new_tokens"], 4096)
+            self.assertEqual(command_record["generation_protocol"]["enable_thinking"], False)
+            self.assertEqual(command_record["generation_protocol"]["thinking_marker"], "/no_think")
+            cot_index = command.index("--cot-prompt")
+            self.assertEqual(command[cot_index + 1], "/no_think")
 
     def test_ifeval_uses_lighteval_extended_task_discovery(self) -> None:
         config = load_config("configs/base.yaml")
@@ -119,6 +130,10 @@ class LightEvalWrapperTest(unittest.TestCase):
                 )
             command = read_json(output / "command.json")["command"]
             self.assertIn("max_model_length=8192", command[2])
+            self.assertIn(
+                "generation_parameters={max_new_tokens:4096,temperature:0.7,top_p:0.9,seed:42}",
+                command[2],
+            )
             max_samples_index = command.index("--max-samples")
             self.assertEqual(command[max_samples_index + 1], "2")
 

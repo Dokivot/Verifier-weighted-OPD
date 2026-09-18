@@ -7,7 +7,9 @@ import argparse
 import json
 from pathlib import Path
 
-import yaml
+from opd.artifacts import build_manifest, load_manifest, save_manifest
+from opd.config import config_hash, load_config
+from opd.tableio import write_json
 
 
 def main() -> int:
@@ -15,8 +17,7 @@ def main() -> int:
     parser.add_argument("--config", required=True)
     arguments = parser.parse_args()
     config_path = Path(arguments.config)
-    with config_path.open(encoding="utf-8") as handle:
-        config = yaml.safe_load(handle) or {}
+    config = load_config(config_path)
     output_dir = Path(config["training"]["output_dir"])
     telemetry_path = output_dir / "telemetry" / "step_000002.json"
     if not telemetry_path.exists():
@@ -25,9 +26,9 @@ def main() -> int:
     step_seconds = float(telemetry["step_seconds"])
     max_steps = int(config["training"]["max_steps"])
     formal_config = config_path.parent / "sure_k2_24h.yaml"
+    formal = None
     if config_path.name == "sure_k2_pilot.yaml" and formal_config.exists():
-        with formal_config.open(encoding="utf-8") as handle:
-            formal = yaml.safe_load(handle) or {}
+        formal = load_config(formal_config)
         max_steps = int(formal["training"]["max_steps"])
     maximum = float(config.get("pilot", {}).get("max_steady_step_seconds", 1440))
     projected_hours = step_seconds * max_steps / 3600
@@ -37,10 +38,31 @@ def main() -> int:
         "formal_max_steps": max_steps,
         "projected_training_hours": projected_hours,
         "maximum_steady_step_seconds": maximum,
+        "config_hash": config_hash(config),
+        "formal_config_hash": config_hash(formal) if formal is not None else None,
+        "run_id": telemetry.get("run_id"),
+        "hardware_fingerprint": telemetry.get("hardware_fingerprint"),
         "status": "passed" if step_seconds <= maximum else "failed",
     }
     report_path = output_dir / "pilot_budget_report.json"
-    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    write_json(report_path, report)
+    manifest_path = output_dir / "manifest.json"
+    existing_manifest = load_manifest(manifest_path)
+    files = [
+        path for path in output_dir.rglob("*") if path.is_file() and path.name != "manifest.json"
+    ]
+    refreshed_manifest = build_manifest(
+        artifact_type=existing_manifest.artifact_type,
+        stage=existing_manifest.stage,
+        config=config,
+        files=files,
+        record_count=existing_manifest.record_count,
+        success_count=existing_manifest.success_count,
+        failure_count=existing_manifest.failure_count,
+        upstream_artifact_ids=existing_manifest.upstream_artifact_ids,
+        metadata={**existing_manifest.metadata, "pilot_budget_report": str(report_path)},
+    )
+    save_manifest(manifest_path, refreshed_manifest)
     print(json.dumps(report, indent=2))
     if step_seconds > maximum:
         raise RuntimeError(

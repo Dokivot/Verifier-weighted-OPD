@@ -7,6 +7,12 @@ from typing import Any
 import yaml
 
 from opd.exceptions import ConfigurationError
+from opd.hashing import stable_hash
+
+_ONLINE_OPERATIONAL_TRAINING_KEYS = {
+    "invocation_step_limit",
+    "resume_from_checkpoint",
+}
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -17,6 +23,28 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
         else:
             merged[key] = deepcopy(value)
     return merged
+
+
+def normalized_online_training_config(training: dict[str, Any]) -> dict[str, Any]:
+    """Remove invocation-only values from an online-training configuration."""
+    normalized = deepcopy(training)
+    for key in _ONLINE_OPERATIONAL_TRAINING_KEYS:
+        normalized.pop(key, None)
+    return normalized
+
+
+def normalized_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Return the canonical config used for artifact identity and resumption."""
+    normalized = deepcopy(config)
+    training = normalized.get("training")
+    if isinstance(training, dict) and training.get("backend") == "online_k2":
+        normalized["training"] = normalized_online_training_config(training)
+    return normalized
+
+
+def config_hash(config: dict[str, Any]) -> str:
+    """Hash a config while ignoring online-training invocation-only arguments."""
+    return stable_hash(normalized_config(config))
 
 
 def load_config(path: str | Path) -> dict[str, Any]:
@@ -41,7 +69,9 @@ def load_config(path: str | Path) -> dict[str, Any]:
     config = _deep_merge(merged, loaded)
     _validate_seed_policy(config)
     _validate_rollout_lengths(config)
+    _validate_benchmark_generation(config)
     _validate_online_k2(config)
+    _validate_thinking_protocol(config)
     return config
 
 
@@ -81,6 +111,57 @@ def _validate_rollout_lengths(config: dict[str, Any]) -> None:
             "rollout.generation.max_new_tokens must be smaller than "
             "rollout.max_model_length so the prompt fits in the vLLM context"
         )
+
+
+def _validate_benchmark_generation(config: dict[str, Any]) -> None:
+    benchmark = config.get("benchmark")
+    if not isinstance(benchmark, dict):
+        return
+    generation = benchmark.get("generation")
+    if not isinstance(generation, dict):
+        raise ConfigurationError("benchmark.generation must be a mapping")
+    max_model_length = benchmark.get("max_model_length")
+    max_new_tokens = generation.get("max_new_tokens")
+    if not isinstance(max_model_length, int) or max_model_length <= 0:
+        raise ConfigurationError("benchmark.max_model_length must be a positive integer")
+    if not isinstance(max_new_tokens, int) or max_new_tokens <= 0:
+        raise ConfigurationError("benchmark.generation.max_new_tokens must be a positive integer")
+    if max_new_tokens > max_model_length:
+        raise ConfigurationError(
+            "benchmark.generation.max_new_tokens cannot exceed benchmark.max_model_length"
+        )
+    max_prompt_tokens = benchmark.get("max_prompt_tokens")
+    if max_prompt_tokens is not None:
+        if not isinstance(max_prompt_tokens, int) or max_prompt_tokens <= 0:
+            raise ConfigurationError("benchmark.max_prompt_tokens must be a positive integer")
+        if max_prompt_tokens + max_new_tokens > max_model_length:
+            raise ConfigurationError(
+                "benchmark.max_prompt_tokens + benchmark.generation.max_new_tokens "
+                "cannot exceed benchmark.max_model_length"
+            )
+    temperature = generation.get("temperature", 1.0)
+    if not isinstance(temperature, int | float) or temperature < 0:
+        raise ConfigurationError("benchmark.generation.temperature must be non-negative")
+    top_p = generation.get("top_p", 1.0)
+    if not isinstance(top_p, int | float) or not 0 < top_p <= 1:
+        raise ConfigurationError("benchmark.generation.top_p must be in (0, 1]")
+    top_k = generation.get("top_k", -1)
+    if not isinstance(top_k, int) or top_k < -1:
+        raise ConfigurationError("benchmark.generation.top_k must be -1 or a non-negative integer")
+    regression = benchmark.get("ood_regression", {})
+    if not isinstance(regression, dict):
+        raise ConfigurationError("benchmark.ood_regression must be a mapping")
+    metric = regression.get("metric", "prompt_level_strict_acc")
+    if not isinstance(metric, str) or not metric:
+        raise ConfigurationError("benchmark.ood_regression.metric must be a non-empty string")
+    max_allowed_drop = regression.get("max_allowed_drop", 0.0)
+    if (
+        isinstance(max_allowed_drop, bool)
+        or not isinstance(max_allowed_drop, int | float)
+        or not 0.0 <= float(max_allowed_drop) <= 1.0
+    ):
+        message = "benchmark.ood_regression.max_allowed_drop must be in [0, 1]"
+        raise ConfigurationError(message)
 
 
 def _validate_online_k2(config: dict[str, Any]) -> None:
@@ -150,6 +231,44 @@ def _validate_online_k2(config: dict[str, Any]) -> None:
             raise ConfigurationError(f"checkpointing.{key} must be positive")
     if checkpointing.get("rolling_retention", 1) != 1:
         raise ConfigurationError("online_k2 currently supports checkpointing.rolling_retention = 1")
+
+
+def _validate_thinking_protocol(config: dict[str, Any]) -> None:
+    """Require online training and evaluation to use the same thinking contract."""
+    training = config.get("training")
+    if not isinstance(training, dict) or training.get("backend") != "online_k2":
+        return
+    evaluation_generation = config.get("evaluation", {}).get("generation", {})
+    benchmark = config.get("benchmark", {})
+    if not isinstance(evaluation_generation, dict) or not isinstance(benchmark, dict):
+        raise ConfigurationError("Thinking protocol requires evaluation and benchmark mappings")
+    fields = {
+        "training.enable_thinking": bool(training.get("enable_thinking", False)),
+        "evaluation.generation.enable_thinking": bool(
+            evaluation_generation.get("enable_thinking", False)
+        ),
+        "benchmark.enable_thinking": bool(benchmark.get("enable_thinking", False)),
+    }
+    if len(set(fields.values())) != 1:
+        raise ConfigurationError(
+            "training, internal evaluation, and official benchmark must share "
+            "the same enable_thinking value: "
+            + ", ".join(f"{key}={value}" for key, value in fields.items())
+        )
+    markers = {
+        "training.thinking_marker": training.get("thinking_marker"),
+        "evaluation.generation.thinking_marker": evaluation_generation.get("thinking_marker"),
+        "benchmark.thinking_marker": benchmark.get("thinking_marker"),
+    }
+    if len(set(markers.values())) != 1:
+        raise ConfigurationError(
+            "training, internal evaluation, and official benchmark must share "
+            "the same thinking_marker: "
+            + ", ".join(f"{key}={value!r}" for key, value in markers.items())
+        )
+    marker = markers["training.thinking_marker"]
+    if marker is not None and (not isinstance(marker, str) or not marker.strip()):
+        raise ConfigurationError("thinking_marker must be a non-empty string or null")
 
 
 def get_required(config: dict[str, Any], dotted_key: str) -> Any:

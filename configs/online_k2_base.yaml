@@ -1,0 +1,190 @@
+project:
+  name: sure-k2-24h
+  seed: 42
+  seed_policy: single
+  registered_seeds: [42]
+  gpu_hour_target: 24
+  gpu_hour_hard_cap: 30
+
+paths:
+  artifact_dir: artifacts/sure_k2_24h
+  data_dir: artifacts/sure_k2_24h/data
+  checkpoint_dir: artifacts/sure_k2_24h/checkpoints
+  report_dir: artifacts/sure_k2_24h/reports
+
+models:
+  student:
+    name: Qwen/Qwen3-1.7B-Base
+    revision: ea980cb0a6c2ae4b936e82123acc929f1cec04c1
+    tokenizer_revision: ea980cb0a6c2ae4b936e82123acc929f1cec04c1
+  teacher:
+    name: Qwen/Qwen3-8B
+    revision: b968826d9c46dd6066d109eabc6255188de91218
+    tokenizer_revision: b968826d9c46dd6066d109eabc6255188de91218
+
+data:
+  source: huggingface
+  dataset_name: zwhe99/DeepMath-103K
+  dataset_subset: default
+  dataset_split: train
+  dataset_revision: 5cf055d1fe3d7a2eb19719ac020211469736ae44
+  input_path: null
+  format: parquet
+  allow_smaller: false
+  filters:
+    minimum_difficulty: 6
+  counts:
+    smoke: 8
+    validation: 0
+    train: 30720
+
+evaluation_data:
+  math500:
+    dataset_name: HuggingFaceH4/MATH-500
+    dataset_subset: null
+    split: test
+    revision: 6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be
+  amc23:
+    dataset_name: zwhe99/amc23
+    dataset_subset: default
+    split: test
+    revision: f9810c0439cd3c670ec885d328a2f06a87f3694a
+
+contamination:
+  train_path: artifacts/sure_k2_24h/data/curated/train.parquet
+  eval_paths:
+    - artifacts/sure_k2_24h/data/eval/math500.parquet
+    - artifacts/sure_k2_24h/data/eval/amc23.parquet
+  enable_near_duplicate: true
+  jaccard_threshold: 0.8
+  shingle_size: 5
+
+checkpointing:
+  minimum_free_disk_gib: 80
+  reserve_artifact_gib: 28
+  safety_factor: 1.1
+  rolling_retention: 1
+
+training:
+  backend: online_k2
+  method: sure_k2
+  parameter_update_mode: full_parameter
+  require_decontaminated_input: true
+  input_path: artifacts/sure_k2_24h/data/contamination/train_clean.parquet
+  output_dir: artifacts/sure_k2_24h/checkpoints/sure_k2_seed42
+  max_records: null
+  max_steps: 55
+  global_prompt_batch_size: 512
+  rollouts_per_prompt: 1
+  rollout_micro_batch_size: 2
+  teacher_micro_batch_size: 1
+  student_micro_batch_size: 1
+  learning_rate: 0.000001
+  warmup_steps: 10
+  betas: [0.9, 0.999]
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  sure_alpha: 1.0
+  dtype: bfloat16
+  master_parameter_dtype: float32
+  gradient_checkpointing: true
+  max_prompt_tokens: 2048
+  max_response_tokens: 8192
+  max_model_length: 12288
+  prompt_template: |-
+    {problem}
+    Please reason step by step, and put your final answer within \boxed{}.
+  enable_thinking: false
+  thinking_marker: /no_think
+  temperature: 1.0
+  top_p: 1.0
+  top_k: 0
+  milestone_steps: [34]
+  state_save_steps: 1
+  resume_from_checkpoint: null
+  quality_gate:
+    enabled: true
+    minimum_samples: 512
+    warning_truncation_rate: 0.05
+    maximum_truncation_rate: 0.2
+
+evaluation:
+  backend: vllm
+  model_name: Qwen/Qwen3-1.7B-Base
+  model_revision: ea980cb0a6c2ae4b936e82123acc929f1cec04c1
+  tokenizer_revision: ea980cb0a6c2ae4b936e82123acc929f1cec04c1
+  output_dir: artifacts/sure_k2_24h/evaluation/internal_verifier/base
+  candidate_output_dir: artifacts/sure_k2_24h/evaluation/internal_verifier/sure_k2
+  batch_size: 16
+  tensor_parallel_size: 1
+  dtype: bfloat16
+  max_model_length: 12288
+  gpu_memory_utilization: 0.9
+  prompt_template: |-
+    {problem}
+    Please reason step by step, and put your final answer within \boxed{}.
+  generation:
+    temperature: 0.7
+    top_p: 0.9
+    top_k: -1
+    max_new_tokens: 8192
+    num_samples: 1
+    enable_thinking: false
+    thinking_marker: /no_think
+    skip_special_tokens: true
+  suites:
+    math500:
+      input_path: artifacts/sure_k2_24h/data/eval/math500.parquet
+      max_samples: 500
+      num_samples: 1
+    amc23:
+      input_path: artifacts/sure_k2_24h/data/eval/amc23.parquet
+      max_samples: null
+      num_samples: 4
+
+benchmark:
+  tasks: [ifeval]
+  ood_tasks: [ifeval]
+  max_model_length: 12288
+  max_prompt_tokens: 2048
+  generation:
+    temperature: 0.7
+    top_p: 0.9
+    top_k: -1
+    max_new_tokens: 8192
+  dtype: bfloat16
+  tensor_parallel_size: 1
+  gpu_memory_utilization: 0.9
+  use_chat_template: true
+  enable_thinking: false
+  thinking_marker: /no_think
+  save_details: true
+  ood_regression:
+    metric: prompt_level_strict_acc
+    max_allowed_drop: 0.02
+  base_output_dir: artifacts/sure_k2_24h/benchmark/base
+  candidate_output_dir: artifacts/sure_k2_24h/benchmark/sure_k2
+  base_math_output_dir: artifacts/sure_k2_24h/benchmark/base_math500
+  candidate_math_output_dir: artifacts/sure_k2_24h/benchmark/sure_k2_math500
+
+report:
+  output_dir: artifacts/sure_k2_24h/reports
+  experiment_id: sure_k2_24h
+  summary_paths:
+    - artifacts/sure_k2_24h/evaluation/internal_verifier/base/math500/summary.json
+    - artifacts/sure_k2_24h/evaluation/internal_verifier/base/amc23/summary.json
+    - artifacts/sure_k2_24h/evaluation/internal_verifier/sure_k2/math500/summary.json
+    - artifacts/sure_k2_24h/evaluation/internal_verifier/sure_k2/amc23/summary.json
+  comparison_paths:
+    - artifacts/sure_k2_24h/reports/math500_base_vs_sure.json
+    - artifacts/sure_k2_24h/reports/amc23_base_vs_sure.json
+  training_runs:
+    - name: SuRe K2 full-parameter training
+      summary_path: artifacts/sure_k2_24h/checkpoints/sure_k2_seed42/training_summary.json
+  ood_regression_path: artifacts/sure_k2_24h/reports/ood_regression.json
+  official_benchmark_manifests:
+    - artifacts/sure_k2_24h/benchmark/base/manifest.json
+    - artifacts/sure_k2_24h/benchmark/base_math500/manifest.json
+    - artifacts/sure_k2_24h/benchmark/sure_k2/manifest.json
+    - artifacts/sure_k2_24h/benchmark/sure_k2_math500/manifest.json
+  internal_verifier_calibration_path: null

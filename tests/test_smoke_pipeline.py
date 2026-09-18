@@ -91,6 +91,35 @@ class SmokePipelineTest(unittest.TestCase):
             self.assertEqual(candidate_indexes, {0, 1})
             self.assertTrue(build_report(config, "smoke").exists())
 
+    def test_evaluation_uses_finish_reason_for_truncation(self) -> None:
+        class StopAtLimitBackend:
+            model_name = "stop-at-limit"
+            model_revision = "test-v1"
+            tokenizer_revision = "test-tokenizer-v1"
+
+            def generate(self, prompts: list[str], *, seed: int) -> list[Generation]:
+                del seed
+                return [
+                    Generation(
+                        text="Final answer: \\boxed{4}",
+                        prompt_tokens=4,
+                        response_tokens=64,
+                        finish_reason="stop",
+                    )
+                    for _ in prompts
+                ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = self._config(root)
+            prepare_dataset(config)
+            with patch("opd.evaluation.runner._backend", return_value=StopAtLimitBackend()):
+                summary_path = evaluate(config, suite="smoke")
+            summary = read_json(summary_path)
+            self.assertEqual(summary["truncated_records"], 0)
+            self.assertEqual(summary["truncation_rate"], 0.0)
+            self.assertEqual(summary["finish_reason_counts"], {"stop": 4})
+
     def test_training_view_rejects_tokenizer_vocabulary_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -156,7 +185,12 @@ class SmokePipelineTest(unittest.TestCase):
             def generate(self, prompts: list[str], *, seed: int) -> list[Generation]:
                 del seed
                 return [
-                    Generation(text="unfinished", prompt_tokens=4, response_tokens=3)
+                    Generation(
+                        text="unfinished",
+                        prompt_tokens=4,
+                        response_tokens=3,
+                        finish_reason="length",
+                    )
                     for _ in prompts
                 ]
 

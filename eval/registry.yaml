@@ -3,18 +3,18 @@ benchmarks:
     provider: lighteval
     task: lighteval|math_500|0|0
     custom_tasks: opd.evaluation.lighteval_tasks
-    primary_metric: accuracy
+    primary_metric: "math_pass@1:1_samples"
     role: primary_math
   aime2024:
     provider: lighteval
     task: lighteval|aime24|0|0
     custom_tasks: opd.evaluation.lighteval_tasks
-    primary_metric: accuracy
+    primary_metric: "math_pass@1:1_samples"
     role: hard_math
   gpqa_diamond:
     provider: lighteval
     task: lighteval|gpqa:diamond|0|0
-    primary_metric: accuracy
+    primary_metric: gpqa_instruct_pass@1:1_samples
     role: out_of_distribution
   ifeval:
     provider: lighteval

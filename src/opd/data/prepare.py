@@ -157,6 +157,10 @@ def prepare_dataset(config: dict[str, Any]) -> dict[str, Path]:
         output_paths[split] = path
 
     report = {
+        "dataset_name": config["data"].get("dataset_name"),
+        "dataset_revision": config["data"].get("dataset_revision"),
+        "dataset_split": config["data"].get("dataset_split", "train"),
+        "filters": config["data"].get("filters", {}),
         "source_rows": len(source_rows),
         "filtered_rows": len(filtered_rows),
         "rows_removed_by_filters": len(source_rows) - len(filtered_rows),

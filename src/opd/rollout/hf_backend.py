@@ -7,6 +7,7 @@ from typing import Any
 from opd.exceptions import DependencyError
 from opd.prompts import render_user_prompt
 from opd.rollout.base import Generation
+from opd.rollout.stop_tokens import generation_stop_token_ids
 from opd.tokenizers import tokenizer_fingerprint
 
 
@@ -37,6 +38,7 @@ class HFRolloutBackend:
         if self._tokenizer.pad_token_id is None:
             self._tokenizer.pad_token = self._tokenizer.eos_token
         self._tokenizer.padding_side = "left"
+        self._stop_token_ids = generation_stop_token_ids(self._tokenizer)
         self.tokenizer_fingerprint = tokenizer_fingerprint(self._tokenizer)
         model_dtype = getattr(torch, self.dtype)
         model_arguments: dict[str, Any] = {
@@ -76,7 +78,7 @@ class HFRolloutBackend:
             "max_new_tokens": int(self.generation_config.get("max_new_tokens", 512)),
             "do_sample": temperature > 0,
             "pad_token_id": self._tokenizer.pad_token_id,
-            "eos_token_id": self._tokenizer.eos_token_id,
+            "eos_token_id": list(self._stop_token_ids),
         }
         if temperature > 0:
             generation_arguments["temperature"] = temperature
@@ -86,8 +88,25 @@ class HFRolloutBackend:
         prompt_width = int(encoded["input_ids"].shape[1])
         prompt_lengths = encoded["attention_mask"].sum(dim=1).tolist()
         generations: list[Generation] = []
+        stop_token_ids = set(self._stop_token_ids)
+        max_new_tokens = int(self.generation_config.get("max_new_tokens", 512))
         for output, prompt_tokens in zip(outputs, prompt_lengths, strict=True):
             response_ids = output[prompt_width:]
+            response_list = response_ids.tolist()
+            terminal_index = next(
+                (
+                    index
+                    for index, token_id in enumerate(response_list)
+                    if token_id in stop_token_ids
+                ),
+                None,
+            )
+            if terminal_index is not None:
+                response_ids = response_ids[: terminal_index + 1]
+                finish_reason = "stop"
+            else:
+                response_ids = response_ids[:max_new_tokens]
+                finish_reason = "length" if len(response_ids) >= max_new_tokens else "unknown"
             text = self._tokenizer.decode(
                 response_ids,
                 skip_special_tokens=bool(self.generation_config.get("skip_special_tokens", False)),
@@ -97,6 +116,7 @@ class HFRolloutBackend:
                     text=text,
                     prompt_tokens=int(prompt_tokens),
                     response_tokens=int(response_ids.numel()),
+                    finish_reason=finish_reason,
                 )
             )
         return generations

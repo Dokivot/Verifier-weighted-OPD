@@ -8,7 +8,10 @@ def render_user_prompt(
     prompt: str,
     *,
     enable_thinking: bool | None = None,
+    thinking_marker: str | None = None,
 ) -> str:
+    if thinking_marker:
+        prompt = f"{prompt.rstrip()}\n{thinking_marker}"
     if getattr(tokenizer, "chat_template", None):
         template_arguments: dict[str, Any] = {
             "tokenize": False,

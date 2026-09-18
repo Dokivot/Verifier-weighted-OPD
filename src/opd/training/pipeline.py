@@ -4,13 +4,14 @@ from pathlib import Path
 from typing import Any
 
 from opd.artifacts import build_manifest, save_manifest, verified_manifest_id
+from opd.config import normalized_online_training_config
 from opd.hashing import stable_hash
 from opd.monitoring.job import JobTimer
 from opd.tableio import read_json, read_records
 from opd.training.hf import train_hf
 from opd.training.mock import train_mock
 from opd.training.modes import parameter_update_mode
-from opd.training.online_k2 import normalized_online_training_config, train_online_k2
+from opd.training.online_k2 import train_online_k2
 
 
 def train(config: dict[str, Any]) -> Path:

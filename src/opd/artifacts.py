@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from opd.config import config_hash
 from opd.exceptions import ArtifactError
 from opd.hashing import file_sha256, stable_hash
 from opd.schemas import ArtifactManifest
@@ -38,11 +39,11 @@ def build_manifest(
     metadata: dict[str, Any] | None = None,
 ) -> ArtifactManifest:
     file_hashes = {str(Path(path)): file_sha256(path) for path in files}
-    config_hash = stable_hash(config)
+    canonical_config_hash = config_hash(config)
     identity = {
         "artifact_type": artifact_type,
         "stage": stage,
-        "config_hash": config_hash,
+        "config_hash": canonical_config_hash,
         "upstream": upstream_artifact_ids or [],
         "files": file_hashes,
     }
@@ -51,7 +52,7 @@ def build_manifest(
         artifact_type=artifact_type,
         stage=stage,
         git_commit=current_git_commit(),
-        config_hash=config_hash,
+        config_hash=canonical_config_hash,
         upstream_artifact_ids=upstream_artifact_ids or [],
         files=file_hashes,
         record_count=record_count,

@@ -4,11 +4,27 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from opd.config import load_config
+from opd.config import config_hash, load_config
 from opd.exceptions import ConfigurationError
 
 
 class ConfigTest(unittest.TestCase):
+    def test_sure_k2_24h_is_isolated_from_legacy_training_config(self) -> None:
+        config = load_config("configs/sure_k2_24h.yaml")
+        training = config["training"]
+
+        self.assertEqual(config["project"]["name"], "sure-k2-24h")
+        self.assertEqual(training["backend"], "online_k2")
+        self.assertEqual(training["method"], "sure_k2")
+        for key in (
+            "qlora",
+            "lora",
+            "early_stopping",
+            "batch_size",
+            "gradient_accumulation_steps",
+        ):
+            self.assertNotIn(key, training)
+
     def test_sure_k2_24h_config_matches_registered_budget(self) -> None:
         config = load_config("configs/sure_k2_24h.yaml")
         self.assertEqual(config["models"]["student"]["name"], "Qwen/Qwen3-1.7B-Base")
@@ -27,6 +43,30 @@ class ConfigTest(unittest.TestCase):
         self.assertTrue(config["training"]["require_decontaminated_input"])
         self.assertEqual(config["evaluation"]["suites"]["math500"]["num_samples"], 1)
         self.assertEqual(config["evaluation"]["suites"]["amc23"]["num_samples"], 4)
+        self.assertFalse(config["training"]["enable_thinking"])
+        self.assertEqual(config["training"]["thinking_marker"], "/no_think")
+        self.assertEqual(config["evaluation"]["generation"]["thinking_marker"], "/no_think")
+        self.assertEqual(config["benchmark"]["thinking_marker"], "/no_think")
+
+    def test_online_resume_arguments_do_not_change_canonical_config_hash(self) -> None:
+        config = load_config("configs/sure_k2_pilot.yaml")
+        resumed = {
+            **config,
+            "training": {
+                **config["training"],
+                "resume_from_checkpoint": "artifacts/sure_k2_24h/pilot/checkpoint/rolling",
+                "invocation_step_limit": 1,
+            },
+        }
+        self.assertEqual(config_hash(config), config_hash(resumed))
+
+    def test_online_thinking_protocol_must_match(self) -> None:
+        config = load_config("configs/sure_k2_24h.yaml")
+        config["benchmark"]["enable_thinking"] = True
+        with self.assertRaisesRegex(ConfigurationError, "same enable_thinking"):
+            from opd.config import _validate_thinking_protocol
+
+            _validate_thinking_protocol(config)
 
     def test_online_k2_rejects_invalid_truncation_thresholds(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -79,6 +119,26 @@ training:
             )
             with self.assertRaisesRegex(ConfigurationError, "prompt fits"):
                 load_config(path)
+
+    def test_benchmark_generation_leaves_context_for_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "invalid.yaml"
+            path.write_text(
+                "benchmark:\n"
+                "  max_model_length: 1024\n"
+                "  max_prompt_tokens: 512\n"
+                "  generation:\n"
+                "    max_new_tokens: 768\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ConfigurationError, "benchmark.max_prompt_tokens"):
+                load_config(path)
+
+    def test_ood_regression_threshold_is_configured(self) -> None:
+        config = load_config("configs/sure_k2_24h.yaml")
+        regression = config["benchmark"]["ood_regression"]
+        self.assertEqual(regression["metric"], "prompt_level_strict_acc")
+        self.assertEqual(regression["max_allowed_drop"], 0.02)
 
     def test_resume_mvp_is_isolated_and_annotates_only_selected_states(self) -> None:
         config = load_config("configs/vfs_weighted_mvp.yaml")

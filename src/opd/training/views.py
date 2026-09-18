@@ -25,7 +25,9 @@ def build_training_view(config: dict[str, Any], *, round_id: int, method: str) -
     )
     verification_path = Path(
         view_config.get("verification_path")
-        or data_dir / "verifications" / f"round_{round_id}" / f"math.{extension}"
+        or config.get("verification", {}).get("internal_output_dir")
+        or config.get("verification", {}).get("output_dir")
+        or data_dir / "internal_verifier" / f"round_{round_id}" / f"math.{extension}"
     )
     annotation_path = Path(
         view_config.get("annotation_path")

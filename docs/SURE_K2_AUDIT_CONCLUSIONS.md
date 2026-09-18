@@ -15,9 +15,55 @@
 - **正式评测协议：暂不通过**
 - **SuRe 相对 Vanilla OPD 的创新结论：尚未成立**
 
-本结论记录审计及修复状态。P0-1、P0-2、P0-4、P0-5 已完成代码/配置层修复；它们仍必须在 RTX PRO
-6000 96GB 上通过 smoke 和 pilot 才能视为运行时验收通过。P0-3（运行中预算硬停止）按当前实验约定
-保留为人工监控风险，不在本轮修复范围内。
+## 1.1 本轮复审新增问题记录
+
+本节记录 2026-09-18 对当前训练设计、代码和评测流程的再次复审结果。它们是审计结论，
+不是已完成修复的声明。
+
+### 必须在正式结果前处理
+
+1. **LightEval 没有显式固定生成预算**：**代码已修复，待真实 GPU 验收。** `src/opd/evaluation/lighteval.py`
+   现在显式传递嵌套的 `generation_parameters={...}`（包含 max_new_tokens、temperature、top-p 和 top-k），并将 resolved generation
+   protocol 写入 `command.json` 和 benchmark manifest；配置加载阶段同时校验 prompt/response 与 model length
+   预算。仍需在目标 GPU 上确认当前 LightEval 版本实际按该配置运行。
+2. **比较器允许不完整配对**：`src/opd/evaluation/compare.py` 取 Base 和 candidate 的 sample ID 交集，
+   会静默丢弃缺失样本。规范比较必须要求两侧 sample ID、candidate index、prompt/reference checksum 完全一致。
+3. **当前没有真正的训练 validation**：`configs/sure_k2_24h.yaml` 将 validation count 设为 `0`，online K2
+   不执行 validation、early stopping 或 best-checkpoint 选择。step 34 只是预设 milestone，step 55 只是预算截点。
+4. **缺少 matched Vanilla K2 对照**：当前 Base→SuRe 只能证明模型发生变化，不能证明 SuRe weighting 优于 Vanilla K2。
+   在完成同 Student、Teacher、数据顺序、seed、步数和评测协议的 `alpha=0` 对照前，不得宣称 SuRe 方法带来增益。
+5. **数学主结果使用自定义 verifier**：MATH-500/AMC23 由 `MathVerifier` 评分，而不是官方 LightEval 数学结果。
+   自定义 verifier 可以用于 paired analysis，但正式报告应同时提供官方 grader/LightEval 结果，或明确标注为项目内部指标。
+6. **IFEval 尚未自动生成 Base-vs-SuRe delta**：**代码已修复，待真实 GPU 评测验收。** stage 50 现在从
+   两侧 LightEval 结果中严格提取 `prompt_level_strict_acc`，按 task 和 overall 计算 delta，并依据配置中的
+   `benchmark.ood_regression.max_allowed_drop` 执行回退门禁；缺指标、任务不一致或生成协议不一致时 fail closed。
+7. **正式预算不是实时硬停止**：GPU-hour 检查主要在作业开始和结束时执行，训练中途超出 hard cap 不会自动终止。
+   若保留人工停止策略，必须在正式实验记录中明确这是操作风险，而不是实时预算保证。
+
+### 工程一致性问题
+
+8. **SuRe 配置继承了无效旧字段**：`configs/sure_k2_24h.yaml` 从 `configs/base.yaml` 继承 `qlora`、LoRA、旧 batch、
+   `early_stopping` 等 online K2 不使用的字段，容易造成“配置写的是 LoRA、实际运行是全参数”的误读。
+9. **正式脚本存在硬编码路径和模型名**：`scripts/run_sure_k2_24h.sh` 硬编码了 Base IFEval checkpoint、final checkpoint
+   和多个 artifact 路径；配置修改后可能出现训练和评测对象漂移。
+10. **stage 30/31 是过时的允许值**：脚本参数校验仍允许 `START_STAGE=30` 和 `START_STAGE=31`，但当前脚本没有对应的
+    stage 执行体，容易让恢复命令产生错误预期。
+11. **readiness gate 校验不够强**：**代码已修复，待真实 GPU/完整数据链验收。** `scripts/validate_sure_k2_readiness.py`
+    现在通过统一 gate 校验 manifest checksum、record count、pinned revision、污染审计上游链、模型 revision、
+    评测 generation protocol、smoke/pilot resolved config 与硬件指纹，以及正式训练峰值磁盘计划；失败时写入
+    `readiness_report.json` 并 fail closed。
+
+### 已通过但需要如实表述的限制
+
+12. **当前 K2 不是完整词表 reverse KL**：训练使用 sampled-token squared log-ratio K2 proxy，而不是完整 vocabulary
+    reverse KL。应在论文式说明和简历中使用准确术语。
+13. **单 seed 不估计训练方差**：paired bootstrap 只能描述评测题目不确定性，不能证明跨训练 seed 稳定。
+14. **本地静态检查不能替代目标 GPU 验收**：当前 `make check`、Shell 语法和单元测试通过，但仍需要 RTX PRO 6000 smoke、
+    2-step pilot 和真实 Base/SuRe 评测确认显存、吞吐、终止 token 与 LightEval 行为。
+
+本结论记录审计及修复状态。P0-1、P0-2、P0-4、P0-5、P0-6 已完成代码/配置层修复；统一 readiness gate
+仍必须在 RTX PRO 6000 96GB 上用完整数据链、smoke、pilot 和 Base 评测实测通过，才能视为运行时验收通过。
+P0-3（运行中预算硬停止）按当前实验约定保留为人工监控风险，不在本轮修复范围内。
 
 ## 2. 已确认合理的部分
 
@@ -168,19 +214,26 @@ Base vs SuRe 只能说明 SuRe checkpoint 相对初始模型发生了变化，�
 - 每个 sample 的 reference answer/prompt hash 必须一致；
 - 任一评测不完整时直接失败，不生成比较报告。
 
-### P1-4：使用 finish reason 判断截断
+### P1-4a：使用 finish reason 判断截断
+
+**状态：已修复，待 GPU 评测验收。** `Generation`、HF/vLLM backend 和评测 runner 现在保存 backend
+finish reason；只有 `finish_reason == "length"` 才计为 truncation。恰好在最大 token 数生成 EOS/stop 的
+样本不再被误判为截断，summary 同时保存 `finish_reason_counts`。
 
 仅使用 `response_tokens >= max_new_tokens` 会把恰好在上限生成 EOS 的样本误判为截断。评测产物应保存 backend 的 finish reason，并以 `finish_reason == "length"` 作为主要截断判据。
 
 ### P1-5：Base 评测应在训练前完成
 
-规范顺序应为：
+**状态：已修复，待正式流程验收。** 正式脚本新增 stage 14–16，在 stage 20 训练前完成 Base MATH-500、
+AMC23 和 IFEval；readiness gate 会拒绝在缺少这些 Base 结果时开始训练。
+
+规范顺序现在为：
 
 ```text
 prepare
 → fetch benchmark
 → contamination audit
-→ Base evaluation
+→ Base evaluation (MATH-500/AMC23/IFEval)
 → GPU smoke/pilot
 → train candidate
 → candidate evaluation
@@ -191,16 +244,28 @@ prepare
 
 ### P1-6：增加数学以外的回归评测
 
-至少加入一个低成本 OOD/回归 suite，例如 IFEval 或固定 MMLU-Pro 子集，报告训练前后变化。数学能力提升不能以未检查的 instruction-following/general capability 回退为代价。
+**状态：已修复，待正式 GPU 评测验收。** 正式配置和脚本将 IFEval 作为 OOD/instruction-following 回归集，
+分别保存 Base 与 SuRe 的 LightEval 原始结果、details、command 和 manifest；stage 50 自动生成
+`ood_regression.json` 并将其纳入最终 experiment report。
 
-### P1-7：完善 verifier 校准
+回退阈值记录在 `benchmark.ood_regression.max_allowed_drop`，不是代码常量。缺少 Base/candidate IFEval、
+无法解析 `prompt_level_strict_acc`、task/协议不匹配或超过阈值时，回归命令失败，不生成可发布的通过报告。
+数学能力提升不能以未检查的 instruction-following/general capability 回退为代价。
 
-当前 verifier 单元测试较完整，但还需要对实际 rollout 随机抽样人工核验：
+### P1-4（本整改计划映射）：verifier 校准并分离内部指标和官方指标
 
-- pass 是否真的正确；
-- fail 是否真的错误；
-- unknown 是否主要来自截断/格式问题；
-- 与 benchmark 官方或论文 grader 的一致性。
+**状态：代码已修复，待真实 rollout 人工标注验收。** `opd verifier calibrate` 现在从
+`pass/fail/unknown/truncated` 四个分层以固定 seed 抽样，先输出人工复核队列；只有完整导入人工标签后，
+才生成 confusion matrix、逐类 precision/recall、extraction-confidence 分桶、分层 agreement 和
+disagreement 样本。没有人工标签时报告明确为 `awaiting_manual_labels`，不会伪造 verifier accuracy。
+
+内部 verifier 结果现在写入 `data/internal_verifier/round_N`，只用于训练数据诊断、质量门禁和校准；正式
+数学主结果必须读取 `benchmark/*_math500` 的官方 LightEval 产物。报告 JSON/Markdown 分开列出
+`internal_verifier` 与 `official_benchmark`，unknown 不会被静默转换为 pass 或 fail。
+
+运行方式和人工标签格式见 `docs/SURE_K2_24H_RUNBOOK.md`。正式发布前仍需对真实 rollout 完成固定数量的
+人工复核，并保留 `review_queue.jsonl`、`human_labels.jsonl`、`calibration_report.json`、
+`disagreements.jsonl` 及其 manifest。
 
 ## 5. P2：建议增强项
 
@@ -236,4 +301,8 @@ prepare
 | 评测协议 | C | 长度、配对完整性、OOD 和 baseline 顺序需修复 |
 | 简历创新结论 | C | 未完成 Vanilla matched control 前不能归因于 SuRe |
 
-**最终准入结论：暂不通过正式训练；先完成 P0 修复和 pilot。**
+**最终准入结论：代码准入条件已补齐，但尚未替代目标 GPU 上的实测验收。** P0-1、P0-2、P0-4、P0-5、
+P0-6 以及本轮 P1-4（含 finish-reason 截断诊断和 verifier 校准）、P1-5、P1-6 已完成代码和流程修复；
+P0-3 仍按约定不做自动硬停止。正式运行前仍必须在目标 RTX PRO 6000 上完成 smoke、2-step pilot、Base
+MATH-500/AMC23/IFEval，并确认 P1-3 等未修复
+风险已被接受或另行处理。完成这些实测门禁后，才可以启动正式 55-step 训练。
