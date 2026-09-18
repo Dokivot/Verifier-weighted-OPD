@@ -150,7 +150,8 @@ class ConfigTest(unittest.TestCase):
 
     def test_dense_vanilla_lora_is_a_separate_fallback(self) -> None:
         config = load_config("configs/dense_vanilla_lora_mvp.yaml")
-        self.assertTrue(config["training"]["qlora"])
+        self.assertFalse(config["training"]["qlora"])
+        self.assertEqual(config["training"]["parameter_update_mode"], "lora")
         self.assertEqual(config["training"]["method"], "vanilla_opd")
         self.assertNotEqual(
             config["training"]["output_dir"],
@@ -159,6 +160,15 @@ class ConfigTest(unittest.TestCase):
         self.assertNotEqual(
             config["training_view"]["output_name"],
             load_config("configs/dense_vanilla_mvp.yaml")["training_view"]["output_name"],
+        )
+
+    def test_dense_vanilla_qlora_is_explicitly_quantized(self) -> None:
+        config = load_config("configs/dense_vanilla_qlora_mvp.yaml")
+        self.assertEqual(config["training"]["parameter_update_mode"], "qlora")
+        self.assertTrue(config["training"]["qlora"])
+        self.assertNotEqual(
+            config["training"]["output_dir"],
+            load_config("configs/dense_vanilla_lora_mvp.yaml")["training"]["output_dir"],
         )
 
     def test_full_parameter_qwen_smoke_disables_qlora(self) -> None:

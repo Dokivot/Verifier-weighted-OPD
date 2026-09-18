@@ -216,7 +216,7 @@ START_STAGE=24 scripts/run_dense_vanilla_mvp.sh
 
 ## 备用 LoRA 对照
 
-主方案结束后，可以用完全相同的 rollout、Teacher annotations 和 training view 运行 QLoRA：
+主方案结束后，可以用完全相同的 rollout、Teacher annotations 和 training view 运行纯 LoRA：
 
 ```bash
 scripts/run_dense_vanilla_lora_mvp.sh \
@@ -224,7 +224,9 @@ scripts/run_dense_vanilla_lora_mvp.sh \
 ```
 
 它使用独立的 training view、checkpoint、merged model、evaluation 和 LightEval 目录，不会覆盖
-全参数结果。比较时只改变 `parameter_update_mode`，不改变数据、seed、训练步数和 benchmark。
+全参数结果。纯 LoRA 保持 BF16 基座权重冻结，只训练 adapter；比较时只改变
+`parameter_update_mode`，不改变数据、seed、训练步数和 benchmark。若要运行 4-bit QLoRA 备选，
+使用 `configs/dense_vanilla_qlora_mvp.yaml`，并用相同的 runner 指定该配置。
 
 ## 8. 需要永久保留的结果
 

@@ -14,6 +14,7 @@ from opd.tableio import read_json, read_records, write_json
 from opd.tokenizers import tokenizer_fingerprint
 from opd.training.losses import sparse_kl_torch
 from opd.training.masking import build_response_labels, response_logit_bounds
+from opd.training.modes import parameter_update_mode, uses_lora, uses_qlora
 from opd.verifier.math import MathVerifier
 
 
@@ -88,7 +89,7 @@ def _load_model(
     model_path = Path(model_config["name"])
     dtype = getattr(torch, training.get("dtype", "bfloat16"))
     quantization = None
-    use_qlora = bool(training.get("qlora", True))
+    use_qlora = uses_qlora(training)
     if use_qlora:
         quantization = dependencies["BitsAndBytesConfig"](
             load_in_4bit=True,
@@ -119,7 +120,7 @@ def _load_model(
     )
     if use_qlora:
         model = dependencies["prepare_model_for_kbit_training"](model)
-    if use_qlora:
+    if uses_lora(training):
         lora = training["lora"]
         peft_config = dependencies["LoraConfig"](
             r=int(lora["r"]),
@@ -130,6 +131,8 @@ def _load_model(
             task_type="CAUSAL_LM",
         )
         model = dependencies["get_peft_model"](model, peft_config)
+        if not use_qlora and training.get("gradient_checkpointing", True):
+            model.enable_input_require_grads()
     if training.get("gradient_checkpointing", True):
         model.config.use_cache = False
         model.gradient_checkpointing_enable()
@@ -343,7 +346,7 @@ def train_hf(config: dict[str, Any]) -> Path:
     dependencies = _require_gpu_dependencies()
     torch = dependencies["torch"]
     training = config["training"]
-    use_qlora = bool(training.get("qlora", True))
+    update_mode = parameter_update_mode(training)
     dependencies["set_seed"](int(config["project"]["seed"]), device_specific=False)
     accelerator = dependencies["Accelerator"](
         gradient_accumulation_steps=int(training.get("gradient_accumulation_steps", 1)),
@@ -658,7 +661,7 @@ def train_hf(config: dict[str, Any]) -> Path:
             output_dir / "training_summary.json",
             {
                 "method": method,
-                "parameter_update_mode": "qlora" if use_qlora else "full_parameter",
+                "parameter_update_mode": update_mode,
                 "global_step": global_step,
                 "best_validation_score": early_state.best_score,
                 "best_step": early_state.best_step,

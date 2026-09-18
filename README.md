@@ -145,7 +145,7 @@ scripts/qwen_full_parameter_smoke.sh
 scripts/run_resume_mvp.sh
 scripts/run_resume_sft.sh
 scripts/run_dense_vanilla_mvp.sh
-# 备用：使用相同数据和 Teacher logits 的 QLoRA 对照
+# 备用：使用相同数据和 Teacher logits 的纯 LoRA 对照
 scripts/run_dense_vanilla_lora_mvp.sh
 ```
 
@@ -157,8 +157,9 @@ MVP 输出统一写入 `artifacts/resume_mvp/`。完整命令、断点续跑和�
 每题生成 2 个 rollout，每个 rollout 最多生成 4,096 response tokens。
 
 当前全量 vanilla OPD 主方案是全参数 BF16；在正式 MVP 前，先完成 QLoRA 依赖 smoke，再用
-`scripts/qwen_full_parameter_smoke.sh` 验证全参数分支。LoRA/QLoRA 备用对照使用
-`scripts/run_dense_vanilla_lora_mvp.sh`，不会覆盖主方案 artifact。
+`scripts/qwen_full_parameter_smoke.sh` 验证全参数分支。默认备用对照是纯 LoRA：基座保持
+BF16、冻结基座、只训练 adapter。QLoRA 仍保留在 `configs/dense_vanilla_qlora_mvp.yaml`，
+不会覆盖主方案 artifact。
 
 ### Phase B/C：MVP 完成后再运行
 

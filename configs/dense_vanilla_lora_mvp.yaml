@@ -7,10 +7,14 @@ training_view:
   output_name: dense_vanilla_lora_b100
 
 training:
-  qlora: true
+  parameter_update_mode: lora
+  qlora: false
   learning_rate: 0.00002
   input_path: artifacts/resume_mvp/data/training_views/round_0/dense_vanilla_lora_b100.parquet
   output_dir: artifacts/resume_mvp/checkpoints/dense_vanilla_lora_b100_seed42
+  early_stopping:
+    eval_steps: 75
+    patience: 2
 
 evaluation:
   output_dir: artifacts/resume_mvp/evaluation/dense_vanilla_lora_b100

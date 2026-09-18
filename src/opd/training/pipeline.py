@@ -9,6 +9,7 @@ from opd.monitoring.job import JobTimer
 from opd.tableio import read_records
 from opd.training.hf import train_hf
 from opd.training.mock import train_mock
+from opd.training.modes import parameter_update_mode
 
 
 def train(config: dict[str, Any]) -> Path:
@@ -64,9 +65,7 @@ def train(config: dict[str, Any]) -> Path:
         metadata={
             "method": config["training"]["method"],
             "backend": backend,
-            "parameter_update_mode": (
-                "qlora" if config["training"].get("qlora", True) else "full_parameter"
-            ),
+            "parameter_update_mode": parameter_update_mode(config["training"]),
             "checkpoint": str(checkpoint),
             "available_record_count": available_record_count,
             "selected_record_count": selected_record_count,
