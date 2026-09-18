@@ -4,6 +4,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 command -v uv >/dev/null || {
+  if [[ -n "${OPD_OFFLINE_WHEELHOUSE:-}" ]] && command -v python3 >/dev/null; then
+    python3 -m pip install --user --no-index \
+      --find-links "$OPD_OFFLINE_WHEELHOUSE" uv
+    export PATH="$HOME/.local/bin:$PATH"
+  fi
+}
+command -v uv >/dev/null || {
   echo "Install uv before bootstrapping this host." >&2
   exit 2
 }

@@ -33,6 +33,7 @@ python -m pip download \
   --dest "$WHEELS" \
   --only-binary=:all: \
   --index-url "$PYPI_INDEX_URL" \
+  "uv" \
   "setuptools>=75" \
   "wheel"
 

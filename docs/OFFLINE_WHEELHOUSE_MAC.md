@@ -13,7 +13,7 @@ git pull --ff-only origin rtx-pro-6000-blackwell
 scripts/build_linux_wheelhouse.sh "$PWD/opd-wheelhouse"
 ```
 
-构建器使用 Python 3.11，并依据冻结的 `uv.lock` 下载 `data`、`gpu`、`eval`、`tracking` 和 `dev` extras。普通依赖默认从 PyPI 获取，CUDA 12.8 PyTorch 依赖从 PyTorch CUDA index 获取。
+构建器使用 Python 3.11，并依据冻结的 `uv.lock` 下载 `data`、`gpu`、`eval`、`tracking` 和 `dev` extras，同时下载 `uv`、`setuptools` 和 `wheel` 这些安装/构建依赖。普通依赖默认从 PyPI 获取，CUDA 12.8 PyTorch 依赖从 PyTorch CUDA index 获取。
 
 如果 PyPI 连接较慢，可以使用镜像：
 
@@ -85,6 +85,7 @@ scripts/remote_bootstrap.sh 2>&1 | tee logs/00_bootstrap_offline.log
 
 ```bash
 make check 2>&1 | tee logs/01_make_check_offline.log
+uv --version
 uv run --no-sync python -c 'import torch, vllm, lighteval, more_itertools; print(torch.__version__, torch.version.cuda)'
 ```
 
