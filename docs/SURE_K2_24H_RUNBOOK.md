@@ -2,6 +2,10 @@
 
 本文只对应当前 Qwen3 strict online OPD 主线。旧 Qwen2.5 指南不能与本实验混用。
 
+如果希望自动执行、失败后收集诊断信息并从最近成功阶段恢复，优先使用
+`scripts/run_sure_k2_oneclick.sh`；完整说明见 `docs/SURE_K2_ONECLICK.md`。本文下面的分阶段命令仍可用于
+单独排障或重跑某个阶段。
+
 ## 1. 服务器与镜像
 
 - GPU：单张 RTX PRO 6000 Blackwell 96GB；
