@@ -75,3 +75,59 @@ def sparse_kl_torch(
     effective_weights = weights.float()
     denominator = effective_weights.sum().clamp(min=1e-12)
     return (per_token * effective_weights).sum() / denominator
+
+
+def sampled_token_k2_numpy(
+    student_logprobs: FloatArray,
+    teacher_logprobs: FloatArray,
+    *,
+    alpha: float = 0.0,
+    mask: FloatArray | None = None,
+) -> tuple[float, FloatArray]:
+    student = np.asarray(student_logprobs, dtype=np.float64)
+    teacher = np.asarray(teacher_logprobs, dtype=np.float64)
+    if student.shape != teacher.shape:
+        raise ValueError("Student and Teacher sampled-token logprobs must have identical shapes")
+    if student.ndim != 1:
+        raise ValueError("Sampled-token logprobs must be one-dimensional")
+    if alpha < 0:
+        raise ValueError("SuRe alpha must be non-negative")
+    effective_mask = (
+        np.ones_like(student, dtype=np.float64)
+        if mask is None
+        else np.asarray(mask, dtype=np.float64)
+    )
+    if effective_mask.shape != student.shape:
+        raise ValueError("Sampled-token mask must match logprob shape")
+    if np.any(effective_mask < 0):
+        raise ValueError("Sampled-token mask cannot contain negative values")
+    weights = 1.0 + alpha * (1.0 - np.exp(student))
+    per_token = 0.5 * np.square(teacher - student) * weights * effective_mask
+    denominator = float(effective_mask.sum())
+    if denominator <= 0:
+        return 0.0, weights
+    return float(per_token.sum() / denominator), weights
+
+
+def sampled_token_k2_torch(
+    student_logprobs: Any,
+    teacher_logprobs: Any,
+    *,
+    alpha: float,
+    mask: Any,
+    denominator: Any | None = None,
+) -> tuple[Any, Any]:
+    if student_logprobs.shape != teacher_logprobs.shape:
+        raise ValueError("Student and Teacher sampled-token logprobs must have identical shapes")
+    if student_logprobs.shape != mask.shape:
+        raise ValueError("Sampled-token mask must match logprob shape")
+    if alpha < 0:
+        raise ValueError("SuRe alpha must be non-negative")
+    student = student_logprobs.float()
+    teacher = teacher_logprobs.float()
+    effective_mask = mask.float()
+    weights = 1.0 + float(alpha) * (1.0 - student.detach().exp())
+    numerator = (0.5 * (teacher - student).square() * weights * effective_mask).sum()
+    normalizer = effective_mask.sum() if denominator is None else denominator
+    loss = numerator / normalizer.float().clamp(min=1.0)
+    return loss, weights

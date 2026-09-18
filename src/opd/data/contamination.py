@@ -10,7 +10,7 @@ from opd.artifacts import (
     verified_manifest_id,
 )
 from opd.data.normalize import jaccard_similarity, normalize_text, token_shingles
-from opd.hashing import stable_hash
+from opd.hashing import file_sha256, stable_hash
 from opd.tableio import read_records, write_json, write_records
 
 
@@ -97,11 +97,18 @@ def audit_contamination(config: dict[str, Any]) -> dict[str, Any]:
         write_records(quarantine_path, quarantine)
     report = {
         "audit_id": stable_hash({"train": str(train_path), "eval": list(map(str, eval_paths))}),
+        "train_path": str(train_path),
+        "train_checksum": file_sha256(train_path),
+        "eval_paths": [str(path) for path in eval_paths],
+        "eval_checksums": {str(path): file_sha256(path) for path in eval_paths},
         "train_count": len(train_records),
         "eval_count": len(eval_records),
         "match_count": len(matches),
+        "quarantine_count": len(quarantine),
         "clean_count": len(clean),
         "threshold": threshold,
+        "enable_near_duplicate": bool(config["contamination"].get("enable_near_duplicate", True)),
+        "shingle_size": shingle_size,
         "matches": matches,
     }
     report_path = output_dir / "report.json"

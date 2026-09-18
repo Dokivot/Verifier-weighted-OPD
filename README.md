@@ -1,11 +1,21 @@
 # OPD-Lab
 
-面向 LLM 后训练实习作品集的工程级 **On-Policy Distillation（OPD）** 项目。当前主方法是
-**VFS-Weighted OPD**：先验证同题多个 Student rollout，在固定 Teacher-token 预算内选择值得
-标注的 on-policy states，再用 verifier 样本权重与 Teacher entropy token 权重训练。模型固定为
+面向 LLM 后训练实习作品集的工程级 **On-Policy Distillation（OPD）** 项目。当前研究计划已切换为
+`Qwen3-1.7B-Base` Student、`Qwen3-8B` Teacher、DeepMath hard split，以及 sampled-token K2
+reverse-KL。首轮先比较未经训练的 Base 与 SuRe K2 OPD，Vanilla K2 留作后续公平消融。
+
+完整实验设计见 [`PROJECT_PLAN.md`](PROJECT_PLAN.md)；AutoDL 执行步骤见
+[`docs/SURE_K2_24H_RUNBOOK.md`](docs/SURE_K2_24H_RUNBOOK.md)。当前代码已实现 strict online K2/SuRe、
+全参数更新（FP32 master + BF16 compute）、原子 resume、policy hash chain、截断门禁和
+avg@k/pass@k 评测。正式 GPU 可运行性仍须
+依次通过 8-sample smoke 与 512-prompt pilot。
+
+## 历史 Qwen2.5 实现
+
+旧主方法是 VFS-Weighted OPD：先验证同题多个 Student rollout，在固定 Teacher-token 预算内选择
+states，再用 verifier 样本权重与 Teacher entropy token 权重训练。旧模型为
 `Qwen2.5-1.5B-Instruct` Student 与 `Qwen2.5-Math-7B-Instruct` Teacher。
 
-完整实验设计与 GPU 预算见 [`PROJECT_PLAN.md`](PROJECT_PLAN.md)。更大规模的备用方案保存在 [`plans/`](plans/README.md)。
 数学 verifier 的文献依据、v2 设计和离线审计流程见
 [`docs/VERIFIER_DESIGN.md`](docs/VERIFIER_DESIGN.md)。
 复用已完成 Round 0 数据立即运行 vanilla OPD 的步骤见
@@ -14,7 +24,7 @@
 项目按“先完整结果、后公平基线、最后消融”推进。3,000 prompts 的首轮执行方案见
 [`docs/RESUME_MVP.md`](docs/RESUME_MVP.md)。
 
-## 项目创新
+### 历史项目创新
 
 1. **Verifier-First State Acquisition**：在 Teacher forward 前完成 K=2 状态分组与预算选择。
 2. **Dual-Granularity Reliability Weighting**：组合 trajectory 级 verifier 权重和 token 级 entropy 权重。
@@ -22,7 +32,7 @@
 
 这些是本项目的算法组合与系统设计贡献，不声称每一点都是全球首次提出。
 
-## 研究问题
+### 历史研究问题
 
 在相同 Student rollout 和实际 Teacher token 预算下，Verifier-first 的状态选择是否比随机选择
 和简单 verifier 过滤获得更好的数学推理质量—成本表现？
@@ -44,7 +54,7 @@ Dense-B100 与组件消融在主 pipeline 得到结果后补充。Entropy/verifi
 本项目强调其与 pre-Teacher state selection 的完整工程组合。完整文献边界见
 [`docs/OPD_INNOVATION_REVIEW.md`](docs/OPD_INNOVATION_REVIEW.md)。
 
-## 架构
+### 历史架构
 
 ```text
 OpenR1-Math-220k
@@ -76,7 +86,7 @@ Full-parameter OPD + validation + best checkpoint
 MATH-500 / AIME / GPQA Diamond / IFEval
 ```
 
-## 工程特性
+### 现有工程特性
 
 - **可恢复任务**：Rollout 与 Teacher annotation 按配置 hash 分片；成功 shard 复用，失败 shard 重跑。
 - **Artifact lineage**：Manifest 记录配置 hash、SHA-256、模型 revision、上游 artifact ID、记录数和资源指标。

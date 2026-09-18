@@ -58,7 +58,16 @@ class HFRolloutBackend:
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
-        rendered = [render_user_prompt(self._tokenizer, prompt) for prompt in prompts]
+        thinking_value = self.generation_config.get("enable_thinking")
+        enable_thinking = bool(thinking_value) if thinking_value is not None else None
+        rendered = [
+            render_user_prompt(
+                self._tokenizer,
+                prompt,
+                enable_thinking=enable_thinking,
+            )
+            for prompt in prompts
+        ]
         encoded = self._tokenizer(rendered, return_tensors="pt", padding=True)
         device = next(self._model.parameters()).device
         encoded = {key: value.to(device) for key, value in encoded.items()}

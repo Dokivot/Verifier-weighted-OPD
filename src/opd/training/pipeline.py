@@ -6,16 +6,17 @@ from typing import Any
 from opd.artifacts import build_manifest, save_manifest, verified_manifest_id
 from opd.hashing import stable_hash
 from opd.monitoring.job import JobTimer
-from opd.tableio import read_records
+from opd.tableio import read_json, read_records
 from opd.training.hf import train_hf
 from opd.training.mock import train_mock
 from opd.training.modes import parameter_update_mode
+from opd.training.online_k2 import normalized_online_training_config, train_online_k2
 
 
 def train(config: dict[str, Any]) -> Path:
     backend = config["training"].get("backend", "mock")
     input_path = Path(config["training"]["input_path"])
-    if config["training"]["method"] == "sft":
+    if backend == "online_k2" or config["training"]["method"] == "sft":
         data_dir = Path(config["paths"]["data_dir"])
         upstream_manifest = (
             data_dir / "contamination/manifest.json"
@@ -33,8 +34,14 @@ def train(config: dict[str, Any]) -> Path:
     if max_records is not None and max_records <= 0:
         raise ValueError("training.max_records must be positive when configured")
     selected_record_count = min(available_record_count, max_records or available_record_count)
+    run_config = config
+    if backend == "online_k2":
+        run_config = {
+            **config,
+            "training": normalized_online_training_config(config["training"]),
+        }
     training_run_id = stable_hash(
-        {"config": config, "upstream_artifact_id": upstream_id}, length=20
+        {"config": run_config, "upstream_artifact_id": upstream_id}, length=20
     )
     with JobTimer(
         "training",
@@ -47,9 +54,23 @@ def train(config: dict[str, Any]) -> Path:
             checkpoint = train_mock(config)
         elif backend == "transformers":
             checkpoint = train_hf(config)
+        elif backend == "online_k2":
+            checkpoint = train_online_k2(config)
         else:
             raise ValueError(f"Unsupported training backend: {backend}")
-        timer.add(records=selected_record_count)
+        completed_records = selected_record_count
+        response_tokens = 0
+        teacher_tokens = 0
+        if backend == "online_k2":
+            summary = read_json(output_dir / "training_summary.json")
+            completed_records = int(summary["last_invocation_records"])
+            response_tokens = int(summary["last_invocation_response_tokens"])
+            teacher_tokens = response_tokens
+        timer.add(
+            records=completed_records,
+            response_tokens=response_tokens,
+            teacher_tokens=teacher_tokens,
+        )
 
     files = [
         path for path in output_dir.rglob("*") if path.is_file() and path.name != "manifest.json"

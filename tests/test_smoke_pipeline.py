@@ -77,8 +77,18 @@ class SmokePipelineTest(unittest.TestCase):
             view_path = build_training_view(config, round_id=0, method="weighted_opd")
             self.assertEqual(len(read_records(view_path)), 16)
             self.assertTrue(train(config).exists())
+            config["evaluation"]["suites"]["smoke"]["num_samples"] = 2
             summary_path = evaluate(config, suite="smoke")
-            self.assertEqual(read_json(summary_path)["accuracy"], 1.0)
+            summary = read_json(summary_path)
+            self.assertEqual(summary["accuracy"], 1.0)
+            self.assertEqual(summary["avg_at_k"], 1.0)
+            self.assertEqual(summary["pass_at_k"], 1.0)
+            self.assertEqual(summary["items"], 4)
+            self.assertEqual(summary["samples"], 8)
+            candidate_indexes = {
+                row["candidate_index"] for row in read_records(summary["predictions_path"])
+            }
+            self.assertEqual(candidate_indexes, {0, 1})
             self.assertTrue(build_report(config, "smoke").exists())
 
     def test_training_view_rejects_tokenizer_vocabulary_mismatch(self) -> None:

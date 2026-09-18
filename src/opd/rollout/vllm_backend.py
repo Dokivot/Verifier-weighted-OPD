@@ -51,7 +51,16 @@ class VLLMRolloutBackend:
             seed=seed,
             skip_special_tokens=bool(self.generation_config.get("skip_special_tokens", False)),
         )
-        rendered_prompts = [render_user_prompt(self._tokenizer, prompt) for prompt in prompts]
+        thinking_value = self.generation_config.get("enable_thinking")
+        enable_thinking = bool(thinking_value) if thinking_value is not None else None
+        rendered_prompts = [
+            render_user_prompt(
+                self._tokenizer,
+                prompt,
+                enable_thinking=enable_thinking,
+            )
+            for prompt in prompts
+        ]
         outputs = self._llm.generate(rendered_prompts, params)
         generations: list[Generation] = []
         for output in outputs:

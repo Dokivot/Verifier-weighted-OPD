@@ -9,6 +9,52 @@ from opd.exceptions import ConfigurationError
 
 
 class ConfigTest(unittest.TestCase):
+    def test_sure_k2_24h_config_matches_registered_budget(self) -> None:
+        config = load_config("configs/sure_k2_24h.yaml")
+        self.assertEqual(config["models"]["student"]["name"], "Qwen/Qwen3-1.7B-Base")
+        self.assertEqual(config["models"]["teacher"]["name"], "Qwen/Qwen3-8B")
+        self.assertEqual(config["data"]["filters"]["minimum_difficulty"], 6)
+        self.assertEqual(config["training"]["method"], "sure_k2")
+        self.assertEqual(config["training"]["global_prompt_batch_size"], 512)
+        self.assertEqual(config["training"]["max_steps"], 55)
+        self.assertEqual(config["training"]["max_response_tokens"], 8192)
+        self.assertEqual(
+            config["training"]["input_path"],
+            "artifacts/sure_k2_24h/data/contamination/train_clean.parquet",
+        )
+        self.assertEqual(config["data"]["counts"]["train"], 30720)
+        self.assertEqual(config["checkpointing"]["rolling_retention"], 1)
+        self.assertTrue(config["training"]["require_decontaminated_input"])
+        self.assertEqual(config["evaluation"]["suites"]["math500"]["num_samples"], 1)
+        self.assertEqual(config["evaluation"]["suites"]["amc23"]["num_samples"], 4)
+
+    def test_online_k2_rejects_invalid_truncation_thresholds(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "invalid.yaml"
+            path.write_text(
+                """
+training:
+  backend: online_k2
+  method: sure_k2
+  parameter_update_mode: full_parameter
+  max_steps: 1
+  global_prompt_batch_size: 1
+  rollout_micro_batch_size: 1
+  teacher_micro_batch_size: 1
+  student_micro_batch_size: 1
+  max_prompt_tokens: 2
+  max_response_tokens: 2
+  max_model_length: 4
+  sure_alpha: 1.0
+  quality_gate:
+    warning_truncation_rate: 0.5
+    maximum_truncation_rate: 0.2
+""",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ConfigurationError, "truncation thresholds"):
+                load_config(path)
+
     def test_single_seed_policy_accepts_registered_seed(self) -> None:
         config = load_config("configs/smoke.yaml")
         self.assertEqual(config["project"]["seed"], 42)

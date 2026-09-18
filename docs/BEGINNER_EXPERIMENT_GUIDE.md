@@ -1,6 +1,11 @@
-# OPD-Lab 小白实验运行指南
+# OPD-Lab 小白实验运行指南（历史 Qwen2.5 流程）
 
-本文只描述当前推荐的首轮简历 MVP，不把历史 Qwen3 方案或 7,500 prompts 的 Phase B/C
+> **已停止作为当前正式实验使用。** 当前推荐方案已切换为 Qwen3 sampled-token K2 reverse-KL，见
+> [`../PROJECT_PLAN.md`](../PROJECT_PLAN.md) 和
+> [`SURE_K2_24H_RUNBOOK.md`](SURE_K2_24H_RUNBOOK.md)。不要按本文启动新的正式训练；本文仅用于复查或
+> 恢复既有 Qwen2.5 artifact。
+
+本文描述此前推荐的首轮简历 MVP，不把更早的 Qwen3 方案或 7,500 prompts 的 Phase B/C
 扩展实验混入主流程。目标是让第一次使用 Linux、AutoDL 和远端 GPU 的读者也能得到一套可复查、
 可继续训练、可用于面试说明的真实实验结果。
 

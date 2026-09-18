@@ -8,6 +8,13 @@ from opd.evaluation.statistics import mcnemar_exact, paired_bootstrap
 from opd.tableio import read_json, read_records, write_json
 
 
+def _scores_by_sample(rows: list[dict[str, Any]]) -> dict[str, list[float]]:
+    grouped: dict[str, list[float]] = {}
+    for row in rows:
+        grouped.setdefault(str(row["sample_id"]), []).append(float(row["score"]))
+    return grouped
+
+
 def compare_runs(
     config: dict[str, Any],
     baseline_summary_path: str | Path,
@@ -21,21 +28,21 @@ def compare_runs(
     ]
     baseline_summary = read_json(baseline_summary_path)
     candidate_summary = read_json(candidate_summary_path)
-    baseline_rows = {
-        row["sample_id"]: row for row in read_records(baseline_summary["predictions_path"])
-    }
-    candidate_rows = {
-        row["sample_id"]: row for row in read_records(candidate_summary["predictions_path"])
-    }
+    baseline_rows = _scores_by_sample(read_records(baseline_summary["predictions_path"]))
+    candidate_rows = _scores_by_sample(read_records(candidate_summary["predictions_path"]))
     common = sorted(baseline_rows.keys() & candidate_rows.keys())
     if not common:
         raise ValueError("Evaluation runs have no common sample ids")
-    baseline_scores = [float(baseline_rows[sample_id]["score"]) for sample_id in common]
-    candidate_scores = [float(candidate_rows[sample_id]["score"]) for sample_id in common]
+    baseline_scores = [
+        sum(baseline_rows[sample_id]) / len(baseline_rows[sample_id]) for sample_id in common
+    ]
+    candidate_scores = [
+        sum(candidate_rows[sample_id]) / len(candidate_rows[sample_id]) for sample_id in common
+    ]
     bootstrap = paired_bootstrap(baseline_scores, candidate_scores, seed=seed)
     mcnemar = mcnemar_exact(
-        [bool(score) for score in baseline_scores],
-        [bool(score) for score in candidate_scores],
+        [any(score > 0 for score in baseline_rows[sample_id]) for sample_id in common],
+        [any(score > 0 for score in candidate_rows[sample_id]) for sample_id in common],
     )
     comparison = {
         "baseline_run_id": baseline_summary["run_id"],
@@ -43,6 +50,16 @@ def compare_runs(
         "common_samples": len(common),
         "baseline_accuracy": sum(baseline_scores) / len(common),
         "candidate_accuracy": sum(candidate_scores) / len(common),
+        "baseline_avg_at_k": sum(baseline_scores) / len(common),
+        "candidate_avg_at_k": sum(candidate_scores) / len(common),
+        "baseline_pass_at_k": sum(
+            any(score > 0 for score in baseline_rows[sample_id]) for sample_id in common
+        )
+        / len(common),
+        "candidate_pass_at_k": sum(
+            any(score > 0 for score in candidate_rows[sample_id]) for sample_id in common
+        )
+        / len(common),
         "mean_difference": bootstrap.mean_difference,
         "ci95": [bootstrap.ci_low, bootstrap.ci_high],
         "mcnemar": mcnemar,

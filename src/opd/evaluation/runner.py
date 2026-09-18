@@ -21,6 +21,13 @@ from opd.tableio import read_records, write_json, write_records
 from opd.verifier.math import MathVerifier
 
 
+def _evaluation_prompt(problem: str, evaluation: dict[str, Any]) -> str:
+    template = str(evaluation.get("prompt_template", "{problem}"))
+    if "{problem}" not in template:
+        raise ValueError("evaluation.prompt_template must contain {problem}")
+    return template.format(problem=problem)
+
+
 def _backend(config: dict[str, Any]) -> Any:
     evaluation = config["evaluation"]
     if evaluation["backend"] == "mock":
@@ -80,12 +87,22 @@ def evaluate(config: dict[str, Any], *, suite: str) -> Path:
     verifier = MathVerifier()
     rows: list[dict[str, Any]] = []
     seed = int(config["project"]["seed"])
+    num_samples = int(
+        suite_config.get(
+            "num_samples",
+            evaluation.get("generation", {}).get("num_samples", 1),
+        )
+    )
+    if num_samples <= 0:
+        raise ValueError("Evaluation num_samples must be positive")
     run_id = stable_hash(
         {
             "model": backend.model_name,
             "revision": backend.model_revision,
             "suite": suite,
             "seed": seed,
+            "num_samples": num_samples,
+            "generation": evaluation.get("generation", {}),
         },
         length=20,
     )
@@ -97,54 +114,83 @@ def evaluate(config: dict[str, Any], *, suite: str) -> Path:
         experiment_seed=seed,
         artifact_run_id=run_id,
     ) as timer:
-        for start in range(0, len(prompts), batch_size):
-            batch = prompts[start : start + batch_size]
-            started = perf_counter()
-            generations = backend.generate([record.problem for record in batch], seed=seed + start)
-            elapsed_ms = int((perf_counter() - started) * 1000)
-            for record, generation in zip(batch, generations, strict=True):
-                verification = verifier.verify(
-                    rollout_id=f"eval_{record.sample_id}",
-                    sample_id=record.sample_id,
-                    response=generation.text,
-                    reference_answer=record.reference_answer,
+        for candidate_index in range(num_samples):
+            for start in range(0, len(prompts), batch_size):
+                batch = prompts[start : start + batch_size]
+                generation_seed = seed + candidate_index * 1_000_000 + start
+                started = perf_counter()
+                model_prompts = [_evaluation_prompt(record.problem, evaluation) for record in batch]
+                generations = backend.generate(
+                    model_prompts,
+                    seed=generation_seed,
                 )
-                rows.append(
-                    {
-                        "sample_id": record.sample_id,
-                        "subject": record.subject,
-                        "difficulty": record.difficulty,
-                        "prompt": record.problem,
-                        "reference_answer": record.reference_answer,
-                        "response": generation.text,
-                        "score": verification.score,
-                        "status": verification.status.value,
-                        "extracted_answer": verification.extracted_answer,
-                        "response_tokens": generation.response_tokens,
-                        "latency_ms": max(1, elapsed_ms // max(1, len(batch))),
-                    }
-                )
-                timer.add(
-                    records=1,
-                    prompt_tokens=generation.prompt_tokens,
-                    response_tokens=generation.response_tokens,
-                )
+                elapsed_ms = int((perf_counter() - started) * 1000)
+                for record, generation, model_prompt in zip(
+                    batch,
+                    generations,
+                    model_prompts,
+                    strict=True,
+                ):
+                    verification = verifier.verify(
+                        rollout_id=f"eval_{record.sample_id}_{candidate_index}",
+                        sample_id=record.sample_id,
+                        response=generation.text,
+                        reference_answer=record.reference_answer,
+                    )
+                    rows.append(
+                        {
+                            "sample_id": record.sample_id,
+                            "candidate_index": candidate_index,
+                            "generation_seed": generation_seed,
+                            "subject": record.subject,
+                            "difficulty": record.difficulty,
+                            "prompt": record.problem,
+                            "model_prompt": model_prompt,
+                            "reference_answer": record.reference_answer,
+                            "response": generation.text,
+                            "score": verification.score,
+                            "status": verification.status.value,
+                            "extracted_answer": verification.extracted_answer,
+                            "response_tokens": generation.response_tokens,
+                            "truncated": generation.response_tokens
+                            >= int(evaluation["generation"]["max_new_tokens"]),
+                            "latency_ms": max(1, elapsed_ms // max(1, len(batch))),
+                        }
+                    )
+                    timer.add(
+                        records=1,
+                        prompt_tokens=generation.prompt_tokens,
+                        response_tokens=generation.response_tokens,
+                    )
 
     write_records(output_path, rows)
     by_subject: dict[str, list[float]] = defaultdict(list)
     by_difficulty: dict[str, list[float]] = defaultdict(list)
+    by_sample: dict[str, list[float]] = defaultdict(list)
     for row in rows:
         by_subject[str(row["subject"])].append(float(row["score"]))
         by_difficulty[str(row["difficulty"])].append(float(row["score"]))
+        by_sample[str(row["sample_id"])].append(float(row["score"]))
+    avg_at_k = sum(float(row["score"]) for row in rows) / max(1, len(rows))
+    pass_at_k = sum(any(score > 0 for score in scores) for scores in by_sample.values()) / max(
+        1, len(by_sample)
+    )
+    truncated_records = sum(bool(row["truncated"]) for row in rows)
     summary = {
         "run_id": run_id,
         "suite": suite,
         "model_name": backend.model_name,
         "model_revision": backend.model_revision,
         "seed": seed,
+        "items": len(by_sample),
         "samples": len(rows),
-        "accuracy": sum(float(row["score"]) for row in rows) / max(1, len(rows)),
+        "num_samples_per_item": num_samples,
+        "accuracy": avg_at_k,
+        "avg_at_k": avg_at_k,
+        "pass_at_k": pass_at_k,
         "status_counts": dict(Counter(str(row["status"]) for row in rows)),
+        "truncated_records": truncated_records,
+        "truncation_rate": truncated_records / max(1, len(rows)),
         "mean_response_tokens": sum(int(row["response_tokens"]) for row in rows)
         / max(1, len(rows)),
         "by_subject": {

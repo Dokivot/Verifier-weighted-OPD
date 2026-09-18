@@ -49,7 +49,11 @@ def convert_prompt_row(row: dict[str, Any], config: dict[str, Any]) -> PromptRec
     source_dataset = config["data"].get("dataset_name", "local-fixture")
     source_revision = config["data"].get("dataset_revision") or "local"
     source = _first_nonempty(row, ["source", "origin"], source_dataset)
-    subject = _first_nonempty(row, ["problem_type", "subject", "category"], "unknown")
+    subject = _first_nonempty(
+        row,
+        ["problem_type", "subject", "category", "topic"],
+        "unknown",
+    )
     difficulty = _first_nonempty(row, ["level", "difficulty"], "unknown")
     identity = {"dataset": source_dataset, "source": source, "problem": problem}
     return PromptRecord(
@@ -69,6 +73,31 @@ def convert_prompt_row(row: dict[str, Any], config: dict[str, Any]) -> PromptRec
             "solution_is_valid": row.get("solution_is_valid"),
         },
     )
+
+
+def _passes_filters(row: dict[str, Any], config: dict[str, Any]) -> bool:
+    filters = config["data"].get("filters", {})
+    if not isinstance(filters, dict):
+        raise ValueError("data.filters must be a mapping")
+    minimum_difficulty = filters.get("minimum_difficulty")
+    if minimum_difficulty is not None:
+        raw_difficulty = next(
+            (
+                value
+                for value in (row.get("difficulty"), row.get("level"))
+                if value is not None and str(value).strip()
+            ),
+            None,
+        )
+        if raw_difficulty is None:
+            return False
+        try:
+            difficulty = float(raw_difficulty)
+        except (TypeError, ValueError):
+            return False
+        if difficulty < float(minimum_difficulty):
+            return False
+    return True
 
 
 def _deduplicate(records: Iterable[PromptRecord]) -> tuple[list[PromptRecord], int]:
@@ -92,7 +121,9 @@ def prepare_dataset(config: dict[str, Any]) -> dict[str, Path]:
     manifest_dir.mkdir(parents=True, exist_ok=True)
     extension = config["data"].get("format", "jsonl")
 
-    converted = [convert_prompt_row(dict(row), config) for row in _iter_source(config)]
+    source_rows = [dict(row) for row in _iter_source(config)]
+    filtered_rows = [row for row in source_rows if _passes_filters(row, config)]
+    converted = [convert_prompt_row(row, config) for row in filtered_rows]
     valid = [record for record in converted if record is not None]
     unique, duplicates = _deduplicate(valid)
     random.Random(int(config["project"]["seed"])).shuffle(unique)
@@ -126,7 +157,9 @@ def prepare_dataset(config: dict[str, Any]) -> dict[str, Path]:
         output_paths[split] = path
 
     report = {
-        "source_rows": len(converted),
+        "source_rows": len(source_rows),
+        "filtered_rows": len(filtered_rows),
+        "rows_removed_by_filters": len(source_rows) - len(filtered_rows),
         "valid_rows": len(valid),
         "duplicates_removed": duplicates,
         "split_counts": {name: len(records) for name, records in splits.items()},

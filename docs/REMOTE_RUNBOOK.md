@@ -1,8 +1,8 @@
-# AutoDL Remote GPU Runbook
+# AutoDL Remote GPU Runbook（历史 Qwen2.5 流程）
 
-> 当前执行以根目录 [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) 的推荐方案一为准：
-> `Qwen2.5-1.5B-Instruct` Student + `Qwen2.5-Math-7B-Instruct` Teacher。本文中旧的
-> 旧 Qwen3-8B/14B 方案只保存在 `plans/`，本文命令均以当前 Qwen2.5 方案为准。
+> **已停止作为当前正式实验使用。** 当前方案见
+> [`SURE_K2_24H_RUNBOOK.md`](SURE_K2_24H_RUNBOOK.md)。不要按本文启动新的正式训练；本文命令只用于
+> 复查或恢复既有 Qwen2.5 实验。
 
 本手册按“先门禁、再小跑、最后正式实验”的顺序执行。所有命令都从仓库根目录运行；脚本使用 `uv run --no-sync`，因此每台新服务器必须先成功执行一次 bootstrap。
 

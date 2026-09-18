@@ -1,4 +1,8 @@
-# OPD-Lab 简历 MVP 执行方案
+# OPD-Lab 简历 MVP 执行方案（历史 Qwen2.5 流程）
+
+> **历史方案，不再用于新实验。** 当前推荐的 Qwen3 sampled-token K2 reverse-KL 方案见
+> [`../plans/PROJECT_PLAN_REVERSE_KL.md`](../plans/PROJECT_PLAN_REVERSE_KL.md)。本文件仅用于解释或恢复
+> 已产生的 Qwen2.5 artifact。
 
 本方案的目标是先得到一条完整、可复现、可展示的真实 GPU 结果，再补公平基线和消融。它不是
 最终论文实验矩阵，但足以形成第一版简历项目和面试演示。

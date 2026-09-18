@@ -3,10 +3,18 @@ from __future__ import annotations
 import unittest
 
 from opd.config import load_config
-from opd.data.prepare import convert_prompt_row
+from opd.data.prepare import _passes_filters, convert_prompt_row
 
 
 class DataPrepareTest(unittest.TestCase):
+    def test_deepmath_filter_accepts_only_numeric_hard_examples(self) -> None:
+        config = load_config("configs/sure_k2_24h.yaml")
+        self.assertTrue(_passes_filters({"difficulty": 6}, config))
+        self.assertTrue(_passes_filters({"level": "7"}, config))
+        self.assertFalse(_passes_filters({"difficulty": 5}, config))
+        self.assertFalse(_passes_filters({"difficulty": "unknown"}, config))
+        self.assertFalse(_passes_filters({}, config))
+
     def test_converts_openr1_default_schema(self) -> None:
         config = load_config("configs/base.yaml")
         record = convert_prompt_row(

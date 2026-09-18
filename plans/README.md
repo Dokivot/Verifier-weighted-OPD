@@ -1,22 +1,26 @@
-# OPD-Lab 备用执行方案
+# OPD-Lab 方案索引
 
-当前实际执行方案位于仓库根目录的 [`PROJECT_PLAN.md`](../PROJECT_PLAN.md)，即推荐方案一。
-本目录保存未启用的旧大规模方案，作为后续升级或对照设计，不应与方案一的 artifact 混用。
+根目录 [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) 是当前入口。本目录同时保存当前详细计划与历史备用
+设计；不同方案的模型、loss 和 artifact 不得混用。
 
-| 方案 | 文件 | 预计 H100 GPU 小时 | 适用场景 |
-|---|---|---:|---|
-| 推荐方案一 | [`../PROJECT_PLAN.md`](../PROJECT_PLAN.md) | 32–68 | 当前执行；1.5B Student、7B Math Teacher、单 seed、有限预算 |
-| 旧推荐完整版 | [`PROJECT_PLAN_RECOMMENDED.md`](PROJECT_PLAN_RECOMMENDED.md) | 300–500 | 备用；更大数据量、多 seed、完整消融 |
-| 研究扩展版 | [`PROJECT_PLAN_RESEARCH_SCALE.md`](PROJECT_PLAN_RESEARCH_SCALE.md) | 600–1000 | 增加 32B Teacher、多领域和大规模实验 |
+| 状态 | 方案 | 文件 | 说明 |
+|---|---|---|---|
+| **当前** | 24h SuRe reverse-KL | [`PROJECT_PLAN_REVERSE_KL.md`](PROJECT_PLAN_REVERSE_KL.md) | Qwen3-1.7B-Base、Qwen3-8B、DeepMath hard split；Base vs 55-step SuRe |
+| 备用 | 旧推荐完整版 | [`PROJECT_PLAN_RECOMMENDED.md`](PROJECT_PLAN_RECOMMENDED.md) | 早期 Qwen3 大规模、多 seed 设计；未启用 |
+| 备用 | 研究扩展版 | [`PROJECT_PLAN_RESEARCH_SCALE.md`](PROJECT_PLAN_RESEARCH_SCALE.md) | 32B Teacher、多领域和更大规模；未启用 |
 
-## 升级条件
+## 历史 Qwen2.5 主线
 
-只有方案一同时满足以下条件，才升级到旧推荐完整版：
+此前根计划使用 Qwen2.5 Student/Teacher、整轮预生成 rollout、top-k sparse forward-KL、VFS 与固定
+verifier 权重。该实验产生了有价值的负结果，但不再是当前推荐训练方案。相关代码、runbook 和 artifact
+暂不删除，以便审计和复盘；任何文档若仍把它写成“当前方案”，均视为待迁移历史文档。
 
-1. Student rollout、Teacher annotation、Verifier 和训练均可断点恢复；
-2. Vanilla OPD 相比 Base/SFT 至少表现出可复现的非负收益；
-3. Weighted OPD 在 validation 上有明确趋势，或产生值得进一步验证的失败结论；
-4. 数据污染、response mask 和 sparse KL audit 均通过；
-5. 剩余 GPU 预算足以覆盖至少两个额外 seed，而不是只扩大单次训练规模。
+## 当前升级顺序
 
-研究扩展版只有在推荐完整版完成后再考虑，不作为简历项目按时完成的必要条件。
+1. 执行 8-sample smoke 和可恢复的两步 512-prompt pilot；
+2. 丢弃 pilot 权重，从固定 Base 完成 55-step SuRe；
+3. 统一评测 Base 与 SuRe；
+4. 结果完整后再补 Vanilla K2、K1、RA-OPD、LoRA 或 alpha sweep。
+
+GPU 小时不再用旧硬件区间外推。先测完整 512-prompt update 的 steady-state wall time，再按 55 步、
+两组模型评测和 20% 重试余量估算。

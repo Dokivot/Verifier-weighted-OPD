@@ -104,6 +104,7 @@ def _parser() -> argparse.ArgumentParser:
     evaluation = subparsers.add_parser("evaluate")
     evaluation.add_argument("--suite", default="smoke")
     evaluation.add_argument("--checkpoint")
+    evaluation.add_argument("--output-dir")
 
     comparison = subparsers.add_parser("compare")
     comparison.add_argument("--baseline", required=True)
@@ -201,6 +202,8 @@ def main(argv: list[str] | None = None) -> None:
                 evaluation_config["evaluation"]["model_name"] = args.checkpoint
                 evaluation_config["evaluation"]["model_revision"] = "local-checkpoint"
                 evaluation_config["evaluation"]["tokenizer_revision"] = "local-checkpoint"
+            if args.output_dir:
+                evaluation_config["evaluation"]["output_dir"] = args.output_dir
             result = evaluate(evaluation_config, suite=args.suite)
         elif args.command == "compare":
             result = compare_runs(config, args.baseline, args.candidate, args.output)
