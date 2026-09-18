@@ -5,5 +5,11 @@ checkpoints/**
 data/**
 reports/**
 wandb/**
+logs
+opd-wheelhouse
 __pycache__
 *.pyc
+*.safetensors
+*.pt
+*.pth
+*.bin

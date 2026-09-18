@@ -25,6 +25,7 @@ logs/
 backups/
 bootstrap.log
 reports/environment/
+opd-wheelhouse/
 *.safetensors
 *.pt
 *.pth
