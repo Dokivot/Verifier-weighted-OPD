@@ -178,7 +178,10 @@ START_STAGE=10 scripts/run_sure_k2_24h.sh \
 真实模型 smoke、2-step pilot、Base MATH-500、Base AMC23 和 Base IFEval 都有效。仅用于开发排障时才可设置
 `SKIP_READINESS_CHECK=1`；该开关禁止用于正式实验及其报告。
 
-如果已经完成 stage 10–16，恢复训练才使用 `START_STAGE=20`；不要在全新目录直接跳过 Base 评测。
+如果已经完成 stage 10–13，想复用数据准备、评测数据下载和去污染结果，可使用
+`START_STAGE=14`；它会继续生成 Base 内部评测、Base IFEval 和 Base 官方 MATH-500，完成后再进入
+准入 gate 与训练。只有 stage 10–17（包括 Base 官方 MATH-500）都已经成功完成时，才可使用
+`START_STAGE=20` 直接进入准入 gate 与训练；不要在全新目录直接跳过 Base 评测。
 不要同时启动第二个正式训练进程。
 
 IFEval 是数学以外的 instruction-following 回归集，用于检查数学训练是否损害通用指令遵循能力。原始
