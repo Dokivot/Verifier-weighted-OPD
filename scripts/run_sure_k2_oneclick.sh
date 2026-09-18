@@ -222,6 +222,14 @@ run_reports() {
     --config "$CONFIG"
 }
 
+run_training() {
+  if [[ -d "$TRAINING_OUTPUT/rolling" ]]; then
+    scripts/train.sh "$CONFIG" "$TRAINING_OUTPUT/rolling"
+  else
+    scripts/train.sh "$CONFIG"
+  fi
+}
+
 if ((NO_BOOTSTRAP == 1)); then
   printf 'Bootstrap was explicitly skipped.\n'
 else
@@ -257,6 +265,7 @@ evaluation = config["evaluation"]
 benchmark = config["benchmark"]
 report = config["report"]
 for value in (
+    training["output_dir"],
     Path(training["output_dir"]) / "final",
     evaluation["output_dir"],
     evaluation["candidate_output_dir"],
@@ -271,21 +280,22 @@ for value in (
     print(value)
 PY
 )
-if ((${#CONFIG_VALUES[@]} != 10)); then
+if ((${#CONFIG_VALUES[@]} != 11)); then
   echo "ERROR: formal config did not provide all expected paths" >&2
   exit 2
 fi
 
-FINAL="${CONFIG_VALUES[0]}"
-BASE_EVAL="${CONFIG_VALUES[1]}"
-SURE_EVAL="${CONFIG_VALUES[2]}"
-BASE_OOD="${CONFIG_VALUES[3]}"
-SURE_OOD="${CONFIG_VALUES[4]}"
-BASE_MATH="${CONFIG_VALUES[5]}"
-SURE_MATH="${CONFIG_VALUES[6]}"
-REPORT_DIR="${CONFIG_VALUES[7]}"
-EXPERIMENT_ID="${CONFIG_VALUES[8]}"
-BASE_CHECKPOINT="${CONFIG_VALUES[9]}"
+TRAINING_OUTPUT="${CONFIG_VALUES[0]}"
+FINAL="${CONFIG_VALUES[1]}"
+BASE_EVAL="${CONFIG_VALUES[2]}"
+SURE_EVAL="${CONFIG_VALUES[3]}"
+BASE_OOD="${CONFIG_VALUES[4]}"
+SURE_OOD="${CONFIG_VALUES[5]}"
+BASE_MATH="${CONFIG_VALUES[6]}"
+SURE_MATH="${CONFIG_VALUES[7]}"
+REPORT_DIR="${CONFIG_VALUES[8]}"
+EXPERIMENT_ID="${CONFIG_VALUES[9]}"
+BASE_CHECKPOINT="${CONFIG_VALUES[10]}"
 
 run_stage 10 prepare scripts/prepare_data.sh "$CONFIG"
 run_stage 11 fetch_math500 uv run --no-sync opd data fetch-eval --name math500 --config "$CONFIG"
@@ -302,7 +312,7 @@ run_stage 16 base_ifeval uv run --no-sync opd benchmark run \
 run_stage 17 base_math500_official uv run --no-sync opd benchmark run \
   --checkpoint "$BASE_CHECKPOINT" --output-dir "$BASE_MATH" --tasks math500 --config "$CONFIG"
 run_stage 20 readiness uv run --no-sync python scripts/validate_sure_k2_readiness.py --config "$CONFIG"
-run_stage 30 train scripts/train.sh "$CONFIG"
+run_stage 30 train run_training
 run_stage 40 sure_math500 uv run --no-sync opd evaluate \
   --suite math500 --checkpoint "$FINAL" --output-dir "$SURE_EVAL" --config "$CONFIG"
 run_stage 41 sure_amc23 uv run --no-sync opd evaluate \

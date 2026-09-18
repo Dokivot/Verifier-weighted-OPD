@@ -68,7 +68,8 @@ scripts/run_sure_k2_oneclick.sh 2>&1 | tee -a logs/sure_k2_oneclick_terminal.log
 ```
 
 代码 commit 更新后，stage 0–1 会重新确认环境；其余阶段只要配置 hash 不变且有成功标记，就会继续复用。失败
-阶段会重跑，成功阶段不会从头开始。
+阶段会重跑，成功阶段不会从头开始。若正式训练 stage 30 已写出 `rolling` checkpoint，总控脚本会自动把它
+传给训练器，继续已完成的 step，而不是从 step 1 开始。
 
 ## 强制重跑和指定起点
 
@@ -98,7 +99,8 @@ watch -n 5 nvidia-smi
 watch -n 30 'find artifacts/sure_k2_24h/checkpoints/sure_k2_seed42/telemetry -name "step_*.json" | sort | tail -3'
 ```
 
-确认最新 telemetry 和 rolling checkpoint 已写完后，才在训练终端按 `Ctrl+C`。重新启动总控脚本即可恢复。
+确认最新 telemetry 和 rolling checkpoint 已写完后，才在训练终端按 `Ctrl+C`。重新启动总控脚本即可恢复；若
+中断发生在 checkpoint 写入过程中，训练器会拒绝不完整的 rolling 状态并保留失败包，不会静默猜测。
 
 完成后至少保留 `training_summary.json`、训练 telemetry、`benchmark/base`、`benchmark/sure_k2`、`evaluation`、
 `reports/sure_k2_24h.json`、两个 Base/Candidate comparison、`ood_regression.json`、readiness report、
