@@ -32,12 +32,14 @@ Run from the repository root on the GPU server:
 cd /root/autodl-tmp/OPDProj
 source scripts/autodl_env.sh
 test -f artifacts/sure_k2_24h/pilot/checkpoint/final/config.json
-test -f artifacts/sure_k2_warmstart_24h/data/contamination/manifest.json
-test -f artifacts/sure_k2_warmstart_24h/data/contamination/train_clean.parquet
+test -f artifacts/sure_k2_24h/data/contamination/manifest.json
+test -f artifacts/sure_k2_24h/data/contamination/train_clean.parquet
 ```
 
-The initial checkpoint is the finished 512-prompt Pilot. The training data is
-the already prepared and decontaminated warm-start data. Do not delete either
+The initial checkpoint is the finished 512-prompt Pilot. The fast candidate
+reuses the already prepared and decontaminated data from the original
+`sure_k2_24h` run; only checkpoints, telemetry, evaluation outputs, and reports
+are isolated under the fast artifact directory. Do not delete either source
 artifact.
 
 ## Step 1: run one fast step

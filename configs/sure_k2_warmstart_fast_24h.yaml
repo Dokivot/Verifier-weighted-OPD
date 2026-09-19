@@ -6,8 +6,15 @@ project:
 
 paths:
   artifact_dir: artifacts/sure_k2_warmstart_fast_24h
+  data_dir: artifacts/sure_k2_24h/data
   checkpoint_dir: artifacts/sure_k2_warmstart_fast_24h/checkpoints
   report_dir: artifacts/sure_k2_warmstart_fast_24h/reports
+
+contamination:
+  train_path: artifacts/sure_k2_24h/data/curated/train.parquet
+  eval_paths:
+    - artifacts/sure_k2_24h/data/eval/math500.parquet
+    - artifacts/sure_k2_24h/data/eval/amc23.parquet
 
 evaluation:
   output_dir: artifacts/sure_k2_warmstart_fast_24h/evaluation/internal_verifier/base
@@ -41,6 +48,7 @@ report:
     - artifacts/sure_k2_warmstart_fast_24h/benchmark/sure_k2_math500/manifest.json
 
 training:
+  input_path: artifacts/sure_k2_24h/data/contamination/train_clean.parquet
   output_dir: artifacts/sure_k2_warmstart_fast_24h/checkpoints/sure_k2_seed42
   rollout_micro_batch_size: 4
   teacher_micro_batch_size: 2
