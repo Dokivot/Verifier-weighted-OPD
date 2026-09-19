@@ -13,6 +13,7 @@ from opd.training.online_k2 import (
     _classify_generated_tokens,
     _format_problem,
     _sampled_logprobs,
+    _student_checkpoint_override,
     _stop_token_ids,
     _trim_generated_tokens,
     _validate_step_artifacts,
@@ -152,6 +153,29 @@ class OnlineK2Test(unittest.TestCase):
             online_run_id(training=resumed, **common),
         )
         self.assertNotIn("resume_from_checkpoint", normalized_online_training_config(resumed))
+
+    def test_resume_checkpoint_takes_precedence_over_initial_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            rolling = Path(directory) / "rolling"
+            self.assertEqual(
+                _student_checkpoint_override(
+                    resume_dir=rolling,
+                    initial_checkpoint=Path(directory) / "missing-initial",
+                ),
+                rolling / "model",
+            )
+
+    def test_initial_checkpoint_is_used_for_first_invocation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            initial = Path(directory) / "initial"
+            initial.mkdir()
+            self.assertEqual(
+                _student_checkpoint_override(
+                    resume_dir=None,
+                    initial_checkpoint=initial,
+                ),
+                initial,
+            )
 
     def test_resume_rejects_orphaned_step_artifact(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

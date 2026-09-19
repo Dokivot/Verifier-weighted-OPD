@@ -560,6 +560,24 @@ def _resolve_resume_dir(resume_dir: Path) -> Path:
     return resume_dir
 
 
+def _student_checkpoint_override(
+    *,
+    resume_dir: Path | None,
+    initial_checkpoint: str | Path | None,
+) -> Path | None:
+    if resume_dir is not None:
+        return resume_dir / "model"
+    if not initial_checkpoint:
+        return None
+    initial_dir = Path(initial_checkpoint)
+    if not initial_dir.exists():
+        raise FileNotFoundError(
+            "Configured initial student checkpoint does not exist: "
+            f"{initial_dir}"
+        )
+    return initial_dir
+
+
 def _load_resume_state(torch: Any, resume_dir: Path) -> dict[str, Any]:
     resume_dir = _resolve_resume_dir(resume_dir)
     state_path = resume_dir / "training_state.pt"
@@ -743,19 +761,10 @@ def train_online_k2(config: dict[str, Any]) -> Path:
     student_config = config["models"]["student"]
     teacher_config = config["models"]["teacher"]
     initial_student_value = training.get("initial_student_checkpoint")
-    if resume_dir is not None and initial_student_value:
-        raise ValueError(
-            "training.initial_student_checkpoint cannot be combined with "
-            "training.resume_from_checkpoint"
-        )
-    student_override = resume_dir / "model" if resume_dir else None
-    if student_override is None and initial_student_value:
-        student_override = Path(str(initial_student_value))
-        if not student_override.exists():
-            raise FileNotFoundError(
-                "Configured initial student checkpoint does not exist: "
-                f"{student_override}"
-            )
+    student_override = _student_checkpoint_override(
+        resume_dir=resume_dir,
+        initial_checkpoint=initial_student_value,
+    )
     student_tokenizer = _load_tokenizer(
         dependencies,
         student_config,

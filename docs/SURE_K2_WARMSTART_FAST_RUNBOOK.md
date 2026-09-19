@@ -167,9 +167,10 @@ artifacts/sure_k2_warmstart_fast_24h/checkpoints/sure_k2_seed42/final/
 artifacts/sure_k2_warmstart_fast_24h/checkpoints/sure_k2_seed42/training_summary.json
 ```
 
-Do not use `initial_student_checkpoint` again after Step 1: a resumed run
-must use the rolling checkpoint so optimizer, scheduler, RNG state, data
-cursor, and policy-hash chain continue consistently.
+The config retains `initial_student_checkpoint` to record the experiment's
+provenance. On resumed invocations, the explicit rolling checkpoint takes
+loading precedence so optimizer, scheduler, RNG state, data cursor, and the
+policy-hash chain continue consistently.
 
 ## If the candidate fails
 
