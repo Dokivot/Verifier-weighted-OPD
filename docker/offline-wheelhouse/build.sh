@@ -25,13 +25,17 @@ uv export --frozen \
 python -m pip download \
   --requirement "$REQUIREMENTS" \
   --dest "$WHEELS" \
-  --only-binary=:all: \
+  --prefer-binary \
+  --retries 10 \
+  --timeout 120 \
   --index-url "$PYPI_INDEX_URL" \
   --extra-index-url "$PYTORCH_INDEX_URL"
 
 python -m pip download \
   --dest "$WHEELS" \
   --only-binary=:all: \
+  --retries 10 \
+  --timeout 120 \
   --index-url "$PYPI_INDEX_URL" \
   "uv" \
   "setuptools>=75" \
@@ -50,8 +54,18 @@ python=$(python --version 2>&1)
 platform=$(python -c 'import platform; print(platform.platform())')
 machine=$(python -c 'import platform; print(platform.machine())')
 wheel_count=$(find "$WHEELS" -maxdepth 1 -type f -name '*.whl' | wc -l | tr -d ' ')
+sdist_count=$(find "$WHEELS" -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l | tr -d ' ')
+package_count=$(find "$WHEELS" -maxdepth 1 -type f \( -name '*.whl' -o -name '*.tar.gz' -o -name '*.zip' \) | wc -l | tr -d ' ')
 requirements=$REQUIREMENTS
 EOF
 
+(
+  cd "$OUTPUT"
+  find wheels -maxdepth 1 -type f -print0 \
+    | sort -z \
+    | xargs -0 sha256sum >checksums.sha256
+)
+
 cat "$OUTPUT/manifest.txt"
+echo "Checksums written to: $OUTPUT/checksums.sha256"
 echo "Offline wheelhouse written to: $WHEELS"

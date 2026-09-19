@@ -13,7 +13,7 @@ git pull --ff-only origin rtx-pro-6000-blackwell
 scripts/build_linux_wheelhouse.sh "$PWD/opd-wheelhouse"
 ```
 
-构建器使用 Python 3.11，并依据冻结的 `uv.lock` 下载 `data`、`gpu`、`eval`、`tracking` 和 `dev` extras，同时下载 `uv`、`setuptools` 和 `wheel` 这些安装/构建依赖。普通依赖默认从 PyPI 获取，CUDA 12.8 PyTorch 依赖从 PyTorch CUDA index 获取。
+构建器使用 Python 3.11，并依据冻结的 `uv.lock` 下载 `data`、`gpu`、`eval`、`tracking` 和 `dev` extras，同时下载 `uv`、`setuptools` 和 `wheel` 这些安装/构建依赖。它优先下载 wheel；对于 PyPI 没有 wheel 的依赖（当前包括 `langdetect==1.0.9`），会保留锁文件校验过的源码包，并在服务器上完全离线构建。普通依赖默认从 PyPI 获取，CUDA 12.8 PyTorch 依赖从 PyTorch CUDA index 获取。
 
 如果 PyPI 连接较慢，可以使用镜像：
 
@@ -30,8 +30,10 @@ scripts/build_linux_wheelhouse.sh "$PWD/opd-wheelhouse"
 
 ```text
 opd-wheelhouse/wheels/*.whl
+opd-wheelhouse/wheels/langdetect-1.0.9.tar.gz
 opd-wheelhouse/requirements-linux-cp311.txt
 opd-wheelhouse/manifest.txt
+opd-wheelhouse/checksums.sha256
 ```
 
 检查：
@@ -39,12 +41,15 @@ opd-wheelhouse/manifest.txt
 ```bash
 cat opd-wheelhouse/manifest.txt
 find opd-wheelhouse/wheels -maxdepth 1 -type f -name '*.whl' | wc -l
+find opd-wheelhouse/wheels -maxdepth 1 -type f -name 'langdetect-1.0.9.tar.gz'
 find opd-wheelhouse/wheels -maxdepth 1 -type f \\
   \( -name 'torch-2.7.1+cu128-*.whl' -o -name 'vllm-0.10.1.1-*.whl' \\
   -o -name 'aiohttp-3.14.3-*.whl' -o -name 'openai_harmony-0.0.8-*.whl' \)
 ```
 
 `aiohttp` 必须是 `cp311` wheel，不能使用之前遇到的 `cp312` wheel。`manifest.txt` 中的 machine 应为 `x86_64`，不是 Mac 的 `arm64`。
+
+`langdetect` 显示 `.tar.gz` 是正常情况，不是下载错误。不要重新加入 `--only-binary=:all:`；否则 pip 会再次报告 `No matching distribution found for langdetect==1.0.9`。构建脚本最后会用 `--no-index` 做一次离线解析检查，只有所有 wheel、源码包和构建依赖齐全时才会成功。
 
 ## 3. 上传到 AutoDL
 
@@ -68,7 +73,11 @@ tar -czf opd-wheelhouse-linux-cp311.tar.gz opd-wheelhouse
 cd /root/autodl-tmp/OPDProj
 find /root/autodl-tmp/opd-wheelhouse/wheels -maxdepth 1 -name '*.whl' | wc -l
 cat /root/autodl-tmp/opd-wheelhouse/manifest.txt
+cd /root/autodl-tmp/opd-wheelhouse
+sha256sum -c checksums.sha256
 ```
+
+必须看到所有文件均为 `OK`；若 checksum 失败，重新上传损坏文件，不要继续安装。
 
 ## 4. 离线安装
 
