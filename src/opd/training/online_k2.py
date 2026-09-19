@@ -116,7 +116,7 @@ def _load_model(
 def _format_problem(problem: str, prompt_template: str) -> str:
     if "{problem}" not in prompt_template:
         raise ValueError("training.prompt_template must contain {problem}")
-    return prompt_template.format(problem=problem)
+    return prompt_template.replace("{problem}", problem)
 
 
 def _encode_prompts(

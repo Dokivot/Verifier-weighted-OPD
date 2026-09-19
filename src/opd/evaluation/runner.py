@@ -25,7 +25,7 @@ def _evaluation_prompt(problem: str, evaluation: dict[str, Any]) -> str:
     template = str(evaluation.get("prompt_template", "{problem}"))
     if "{problem}" not in template:
         raise ValueError("evaluation.prompt_template must contain {problem}")
-    prompt = template.format(problem=problem)
+    prompt = template.replace("{problem}", problem)
     thinking_marker = evaluation.get("generation", {}).get("thinking_marker")
     if thinking_marker:
         if not isinstance(thinking_marker, str):

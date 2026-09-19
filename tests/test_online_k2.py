@@ -11,6 +11,7 @@ from opd.training.online_k2 import (
     OnlineTrajectory,
     _checkpoint_storage_plan,
     _classify_generated_tokens,
+    _format_problem,
     _sampled_logprobs,
     _stop_token_ids,
     _trim_generated_tokens,
@@ -21,6 +22,13 @@ from opd.training.online_k2 import (
 
 
 class OnlineK2Test(unittest.TestCase):
+    def test_prompt_template_preserves_latex_braces(self) -> None:
+        template = "{problem}\nPlease put the answer in \\boxed{} and preserve \\frac{1}{2}."
+        self.assertEqual(
+            _format_problem("Compute 1 + 1.", template),
+            "Compute 1 + 1.\nPlease put the answer in \\boxed{} and preserve \\frac{1}{2}.",
+        )
+
     def test_sampled_logprobs_use_shifted_response_positions(self) -> None:
         try:
             import torch
