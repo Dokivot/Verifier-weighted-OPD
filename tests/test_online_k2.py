@@ -130,6 +130,32 @@ class OnlineK2Test(unittest.TestCase):
         self.assertEqual(plan["retained_milestone_model_checkpoints"], 1)
         self.assertTrue(plan["passed"])
 
+    def test_resume_storage_plan_does_not_charge_existing_rolling_twice(self) -> None:
+        gib = 1024**3
+        common = {
+            "parameter_count": 1_700_000_000,
+            "max_steps": 14,
+            "milestone_steps": {7},
+            "checkpointing": {
+                "minimum_free_disk_gib": 80,
+                "reserve_artifact_gib": 28,
+                "safety_factor": 1.1,
+            },
+            "free_bytes": 84 * gib,
+        }
+        fresh = _checkpoint_storage_plan(**common)
+        resumed = _checkpoint_storage_plan(
+            **common,
+            preallocated_rolling_copies=1,
+        )
+
+        self.assertFalse(fresh["passed"])
+        self.assertTrue(resumed["passed"])
+        self.assertEqual(resumed["atomic_rolling_copies"], 2)
+        self.assertEqual(resumed["preallocated_rolling_copies"], 1)
+        self.assertEqual(resumed["rolling_copies_requiring_free_space"], 1)
+        self.assertEqual(resumed["required_free_disk_gib"], 80)
+
     def test_resume_path_and_invocation_limit_do_not_change_run_id(self) -> None:
         training = {
             "method": "sure_k2",

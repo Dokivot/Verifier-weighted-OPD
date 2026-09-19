@@ -489,6 +489,8 @@ def _checkpoint_storage_plan(
     milestone_steps: set[int],
     checkpointing: dict[str, Any],
     free_bytes: int,
+    preallocated_rolling_copies: int = 0,
+    preallocated_model_checkpoints: int = 0,
 ) -> dict[str, Any]:
     """Estimate the peak disk footprint while atomically replacing rolling state."""
     if parameter_count <= 0:
@@ -499,10 +501,19 @@ def _checkpoint_storage_plan(
     rolling_checkpoint_bytes = model_bytes + optimizer_bytes
     retained_milestones = sum(step < max_steps for step in milestone_steps)
     model_only_checkpoints = retained_milestones + 1
+    rolling_copies_requiring_free_space = max(0, 2 - preallocated_rolling_copies)
+    model_checkpoints_requiring_free_space = max(
+        0,
+        model_only_checkpoints - preallocated_model_checkpoints,
+    )
     reserve_bytes = int(float(checkpointing.get("reserve_artifact_gib", 12)) * gib)
     safety_factor = float(checkpointing.get("safety_factor", 1.1))
     estimated_peak_bytes = int(
-        (2 * rolling_checkpoint_bytes + model_only_checkpoints * model_bytes + reserve_bytes)
+        (
+            rolling_copies_requiring_free_space * rolling_checkpoint_bytes
+            + model_checkpoints_requiring_free_space * model_bytes
+            + reserve_bytes
+        )
         * safety_factor
     )
     minimum_free_bytes = int(float(checkpointing.get("minimum_free_disk_gib", 80)) * gib)
@@ -513,8 +524,12 @@ def _checkpoint_storage_plan(
         "optimizer_gib": optimizer_bytes / gib,
         "rolling_checkpoint_gib": rolling_checkpoint_bytes / gib,
         "atomic_rolling_copies": 2,
+        "preallocated_rolling_copies": preallocated_rolling_copies,
+        "rolling_copies_requiring_free_space": rolling_copies_requiring_free_space,
         "retained_milestone_model_checkpoints": retained_milestones,
         "final_model_checkpoints": 1,
+        "preallocated_model_checkpoints": preallocated_model_checkpoints,
+        "model_checkpoints_requiring_free_space": model_checkpoints_requiring_free_space,
         "reserve_artifact_gib": reserve_bytes / gib,
         "safety_factor": safety_factor,
         "estimated_peak_gib": estimated_peak_bytes / gib,
@@ -532,14 +547,20 @@ def _assert_checkpoint_storage(
     max_steps: int,
     milestone_steps: set[int],
     checkpointing: dict[str, Any],
+    resuming: bool,
 ) -> None:
     free_bytes = shutil.disk_usage(output_dir).free
+    existing_model_checkpoints = sum(
+        path.is_dir() for path in (output_dir / "checkpoints").glob("step_*")
+    ) + int((output_dir / "final").is_dir())
     plan = _checkpoint_storage_plan(
         parameter_count=parameter_count,
         max_steps=max_steps,
         milestone_steps=milestone_steps,
         checkpointing=checkpointing,
         free_bytes=free_bytes,
+        preallocated_rolling_copies=int(resuming),
+        preallocated_model_checkpoints=existing_model_checkpoints,
     )
     write_json(output_dir / "checkpoint_storage_plan.json", plan)
     if not plan["passed"]:
@@ -856,6 +877,7 @@ def train_online_k2(config: dict[str, Any]) -> Path:
         max_steps=max_steps,
         milestone_steps=milestone_steps,
         checkpointing=dict(config.get("checkpointing", {})),
+        resuming=resume_state is not None,
     )
     _validate_step_artifacts(
         step_dir,
