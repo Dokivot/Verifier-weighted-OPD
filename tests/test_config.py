@@ -92,6 +92,14 @@ class ConfigTest(unittest.TestCase):
             "artifacts/sure_k2_24h/data/contamination/train_clean.parquet",
         )
         self.assertEqual(fast["paths"]["data_dir"], "artifacts/sure_k2_24h/data")
+        self.assertEqual(
+            fast["evaluation"]["suites"]["math500"]["input_path"],
+            "artifacts/sure_k2_24h/data/eval/math500.parquet",
+        )
+        self.assertEqual(
+            fast["evaluation"]["suites"]["amc23"]["input_path"],
+            "artifacts/sure_k2_24h/data/eval/amc23.parquet",
+        )
         self.assertNotEqual(
             fast["training"]["output_dir"],
             formal["training"]["output_dir"],

@@ -19,6 +19,11 @@ contamination:
 evaluation:
   output_dir: artifacts/sure_k2_warmstart_fast_24h/evaluation/internal_verifier/base
   candidate_output_dir: artifacts/sure_k2_warmstart_fast_24h/evaluation/internal_verifier/sure_k2
+  suites:
+    math500:
+      input_path: artifacts/sure_k2_24h/data/eval/math500.parquet
+    amc23:
+      input_path: artifacts/sure_k2_24h/data/eval/amc23.parquet
 
 benchmark:
   base_output_dir: artifacts/sure_k2_warmstart_fast_24h/benchmark/base

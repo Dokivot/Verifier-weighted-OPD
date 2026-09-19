@@ -34,6 +34,8 @@ source scripts/autodl_env.sh
 test -f artifacts/sure_k2_24h/pilot/checkpoint/final/config.json
 test -f artifacts/sure_k2_24h/data/contamination/manifest.json
 test -f artifacts/sure_k2_24h/data/contamination/train_clean.parquet
+test -f artifacts/sure_k2_24h/data/eval/math500.parquet
+test -f artifacts/sure_k2_24h/data/eval/amc23.parquet
 ```
 
 The initial checkpoint is the finished 512-prompt Pilot. The fast candidate
