@@ -81,6 +81,15 @@ sha256sum -c checksums.sha256
 
 ## 4. 离线安装
 
+离线仓库已经包含 `uv`，因此不需要先运行 `curl -LsSf https://astral.sh/uv/install.sh | sh`。先确认镜像中有
+Python 3.11：
+
+```bash
+python3.11 --version
+```
+
+然后直接执行：
+
 ```bash
 cd /root/autodl-tmp/OPDProj
 source scripts/autodl_env.sh
@@ -89,6 +98,18 @@ scripts/remote_bootstrap.sh 2>&1 | tee logs/00_bootstrap_offline.log
 ```
 
 当 `OPD_OFFLINE_WHEELHOUSE` 存在时，`remote_bootstrap.sh` 会执行 `uv sync --frozen --offline --no-index`，只从 wheelhouse 安装，不访问 PyPI。
+
+如果原来没有 `uv`，bootstrap 会使用系统 `python3 -m pip --user` 从 wheelhouse 安装它，并在该脚本内部加入
+PATH。脚本结束后，为了让当前终端也能直接调用 `uv`，执行：
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+hash -r
+source scripts/autodl_env.sh
+```
+
+不要无条件执行 `source "$HOME/.local/bin/env"`：该文件由 Astral 的在线安装器创建，而 `pip --user` 离线安装
+通常不会创建它。如果文件确实存在，source 它也可以，但不是本流程的必要步骤。
 
 安装后检查：
 

@@ -22,7 +22,7 @@ if [[ -n "${OPD_OFFLINE_WHEELHOUSE:-}" ]]; then
     exit 2
   fi
   echo "Installing from offline wheelhouse: $OPD_OFFLINE_WHEELHOUSE"
-  uv sync --frozen --offline --no-index \
+  uv sync --frozen --offline --no-index --no-python-downloads --python 3.11 \
     --find-links "$OPD_OFFLINE_WHEELHOUSE" \
     --extra data --extra gpu --extra eval --extra tracking --extra dev
 else
