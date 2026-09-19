@@ -5,8 +5,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 CONFIG="${CONFIG:-configs/sure_k2_24h.yaml}"
-SMOKE_CONFIG="${SMOKE_CONFIG:-configs/sure_k2_smoke.yaml}"
-PILOT_CONFIG="${PILOT_CONFIG:-configs/sure_k2_pilot.yaml}"
+SMOKE_CONFIG="${SMOKE_CONFIG:-}"
+PILOT_CONFIG="${PILOT_CONFIG:-}"
 FROM_STAGE="${FROM_STAGE:-0}"
 FORCE_FROM="${FORCE_FROM:-}"
 NO_BOOTSTRAP=0
@@ -62,6 +62,13 @@ while (($#)); do
       ;;
   esac
 done
+
+if [[ -z "$SMOKE_CONFIG" || -z "$PILOT_CONFIG" ]]; then
+  CONFIG_STEM="${CONFIG%.yaml}"
+  CONFIG_STEM="${CONFIG_STEM%_24h}"
+  [[ -n "$SMOKE_CONFIG" ]] || SMOKE_CONFIG="${CONFIG_STEM}_smoke.yaml"
+  [[ -n "$PILOT_CONFIG" ]] || PILOT_CONFIG="${CONFIG_STEM}_pilot.yaml"
+fi
 
 if ! [[ "$FROM_STAGE" =~ ^[0-9]+$ ]]; then
   echo "ERROR: --from-stage must be a non-negative integer" >&2

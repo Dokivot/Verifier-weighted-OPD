@@ -1,0 +1,13 @@
+defaults: sure_k2_warmstart_24h.yaml
+
+project:
+  run_tier: sure-k2-warmstart-pilot
+
+training:
+  output_dir: artifacts/sure_k2_warmstart_24h/pilot/checkpoint
+  max_steps: 2
+  invocation_step_limit: 1
+  milestone_steps: []
+
+pilot:
+  max_steady_step_seconds: 4500

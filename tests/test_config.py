@@ -48,6 +48,54 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config["evaluation"]["generation"]["thinking_marker"], "/no_think")
         self.assertEqual(config["benchmark"]["thinking_marker"], "/no_think")
 
+    def test_warmstart_configs_preserve_base_identity_and_use_pilot_weights(self) -> None:
+        formal = load_config("configs/sure_k2_warmstart_24h.yaml")
+        pilot = load_config("configs/sure_k2_warmstart_pilot.yaml")
+        smoke = load_config("configs/sure_k2_warmstart_smoke.yaml")
+
+        self.assertEqual(
+            formal["models"]["student"]["name"],
+            "Qwen/Qwen3-1.7B-Base",
+        )
+        self.assertEqual(
+            formal["training"]["initial_student_checkpoint"],
+            "artifacts/sure_k2_24h/pilot/checkpoint/final",
+        )
+        self.assertEqual(formal["training"]["global_prompt_batch_size"], 128)
+        self.assertEqual(formal["training"]["max_steps"], 14)
+        self.assertEqual(formal["training"]["max_response_tokens"], 8192)
+        self.assertEqual(formal["training"]["state_save_steps"], 2)
+        self.assertEqual(pilot["training"]["max_steps"], 2)
+        self.assertEqual(pilot["pilot"]["max_steady_step_seconds"], 4500)
+        self.assertEqual(
+            smoke["training"]["output_dir"],
+            "artifacts/sure_k2_warmstart_24h/smoke/checkpoint",
+        )
+
+    def test_warmstart_fast_candidate_only_changes_micro_batches(self) -> None:
+        formal = load_config("configs/sure_k2_warmstart_24h.yaml")
+        fast = load_config("configs/sure_k2_warmstart_fast_24h.yaml")
+
+        self.assertEqual(fast["training"]["global_prompt_batch_size"], 128)
+        self.assertEqual(fast["training"]["max_steps"], 14)
+        self.assertEqual(fast["training"]["max_response_tokens"], 8192)
+        self.assertEqual(fast["training"]["rollout_micro_batch_size"], 4)
+        self.assertEqual(fast["training"]["teacher_micro_batch_size"], 2)
+        self.assertEqual(fast["training"]["student_micro_batch_size"], 2)
+        self.assertEqual(fast["training"]["invocation_step_limit"], 1)
+        self.assertEqual(
+            fast["training"]["initial_student_checkpoint"],
+            formal["training"]["initial_student_checkpoint"],
+        )
+        self.assertEqual(
+            fast["training"]["input_path"],
+            formal["training"]["input_path"],
+        )
+        self.assertNotEqual(
+            fast["training"]["output_dir"],
+            formal["training"]["output_dir"],
+        )
+
     def test_online_resume_arguments_do_not_change_canonical_config_hash(self) -> None:
         config = load_config("configs/sure_k2_pilot.yaml")
         resumed = {

@@ -742,7 +742,20 @@ def train_online_k2(config: dict[str, Any]) -> Path:
     resume_state = _load_resume_state(torch, resume_dir) if resume_dir else None
     student_config = config["models"]["student"]
     teacher_config = config["models"]["teacher"]
+    initial_student_value = training.get("initial_student_checkpoint")
+    if resume_dir is not None and initial_student_value:
+        raise ValueError(
+            "training.initial_student_checkpoint cannot be combined with "
+            "training.resume_from_checkpoint"
+        )
     student_override = resume_dir / "model" if resume_dir else None
+    if student_override is None and initial_student_value:
+        student_override = Path(str(initial_student_value))
+        if not student_override.exists():
+            raise FileNotFoundError(
+                "Configured initial student checkpoint does not exist: "
+                f"{student_override}"
+            )
     student_tokenizer = _load_tokenizer(
         dependencies,
         student_config,
@@ -1153,6 +1166,9 @@ def train_online_k2(config: dict[str, Any]) -> Path:
                     "tokenizer_revision", teacher_config["revision"]
                 ),
             },
+            "initial_student_checkpoint": (
+                str(initial_student_value) if initial_student_value else None
+            ),
             "input_path": str(input_path),
             "input_checksum": input_checksum,
             "history": history,

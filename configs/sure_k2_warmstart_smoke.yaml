@@ -1,0 +1,22 @@
+defaults: sure_k2_warmstart_24h.yaml
+
+project:
+  run_tier: sure-k2-warmstart-gpu-smoke
+
+training:
+  require_decontaminated_input: false
+  input_path: artifacts/sure_k2_warmstart_24h/data/curated/smoke.parquet
+  output_dir: artifacts/sure_k2_warmstart_24h/smoke/checkpoint
+  max_steps: 1
+  global_prompt_batch_size: 8
+  rollout_micro_batch_size: 1
+  teacher_micro_batch_size: 1
+  student_micro_batch_size: 1
+  max_response_tokens: 512
+  max_model_length: 2560
+  milestone_steps: []
+  quality_gate:
+    enabled: false
+    minimum_samples: 8
+    warning_truncation_rate: 0.5
+    maximum_truncation_rate: 1.0

@@ -25,9 +25,12 @@ def main() -> int:
     telemetry = json.loads(telemetry_path.read_text(encoding="utf-8"))
     step_seconds = float(telemetry["step_seconds"])
     max_steps = int(config["training"]["max_steps"])
-    formal_config = config_path.parent / "sure_k2_24h.yaml"
+    formal_stem = config_path.stem
+    if formal_stem.endswith("_pilot"):
+        formal_stem = formal_stem[: -len("_pilot")] + "_24h"
+    formal_config = config_path.parent / f"{formal_stem}.yaml"
     formal = None
-    if config_path.name == "sure_k2_pilot.yaml" and formal_config.exists():
+    if config_path.name.endswith("_pilot.yaml") and formal_config.exists():
         formal = load_config(formal_config)
         max_steps = int(formal["training"]["max_steps"])
     maximum = float(config.get("pilot", {}).get("max_steady_step_seconds", 1440))

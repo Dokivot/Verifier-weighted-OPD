@@ -275,8 +275,16 @@ def _check_base_evaluations(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _companion_config_path(formal_config_path: Path, name: str) -> Path:
+    """Resolve the smoke or pilot config paired with a formal config."""
+    stem = formal_config_path.stem
+    if stem.endswith("_24h"):
+        stem = stem[: -len("_24h")]
+    return formal_config_path.parent / f"{stem}_{name}.yaml"
+
+
 def _load_variant_config(formal_config_path: Path, name: str) -> dict[str, Any]:
-    variant_path = formal_config_path.parent / f"sure_k2_{name}.yaml"
+    variant_path = _companion_config_path(formal_config_path, name)
     return load_config(variant_path)
 
 
@@ -416,8 +424,8 @@ def validate_sure_k2_readiness(config_path: str | Path) -> dict[str, Any]:
 
     run_check("data_manifests", lambda: _check_data(config))
     run_check("base_evaluations", lambda: _check_base_evaluations(config))
-    smoke_config = load_config(formal_path.parent / "sure_k2_smoke.yaml")
-    pilot_config = load_config(formal_path.parent / "sure_k2_pilot.yaml")
+    smoke_config = load_config(_companion_config_path(formal_path, "smoke"))
+    pilot_config = load_config(_companion_config_path(formal_path, "pilot"))
     run_check(
         "smoke",
         lambda: _check_training_gate(

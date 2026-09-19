@@ -1,0 +1,85 @@
+defaults: online_k2_base.yaml
+
+project:
+  name: sure-k2-warmstart-24h
+  run_tier: warmstart-budgeted-24h
+
+paths:
+  artifact_dir: artifacts/sure_k2_warmstart_24h
+  data_dir: artifacts/sure_k2_warmstart_24h/data
+  checkpoint_dir: artifacts/sure_k2_warmstart_24h/checkpoints
+  report_dir: artifacts/sure_k2_warmstart_24h/reports
+
+data:
+  counts:
+    smoke: 8
+    validation: 0
+    train: 30720
+
+contamination:
+  train_path: artifacts/sure_k2_warmstart_24h/data/curated/train.parquet
+  eval_paths:
+    - artifacts/sure_k2_warmstart_24h/data/eval/math500.parquet
+    - artifacts/sure_k2_warmstart_24h/data/eval/amc23.parquet
+
+training:
+  input_path: artifacts/sure_k2_warmstart_24h/data/contamination/train_clean.parquet
+  output_dir: artifacts/sure_k2_warmstart_24h/checkpoints/sure_k2_seed42
+  initial_student_checkpoint: artifacts/sure_k2_24h/pilot/checkpoint/final
+  resume_from_checkpoint: null
+  max_steps: 14
+  global_prompt_batch_size: 128
+  rollouts_per_prompt: 1
+  rollout_micro_batch_size: 2
+  teacher_micro_batch_size: 1
+  student_micro_batch_size: 1
+  learning_rate: 0.000001
+  warmup_steps: 3
+  sure_alpha: 1.0
+  max_prompt_tokens: 2048
+  max_response_tokens: 8192
+  max_model_length: 12288
+  milestone_steps: [7]
+  state_save_steps: 2
+  quality_gate:
+    enabled: true
+    minimum_samples: 128
+    warning_truncation_rate: 0.05
+    maximum_truncation_rate: 0.20
+
+evaluation:
+  output_dir: artifacts/sure_k2_warmstart_24h/evaluation/internal_verifier/base
+  candidate_output_dir: artifacts/sure_k2_warmstart_24h/evaluation/internal_verifier/sure_k2
+  suites:
+    math500:
+      input_path: artifacts/sure_k2_warmstart_24h/data/eval/math500.parquet
+    amc23:
+      input_path: artifacts/sure_k2_warmstart_24h/data/eval/amc23.parquet
+
+benchmark:
+  base_output_dir: artifacts/sure_k2_warmstart_24h/benchmark/base
+  candidate_output_dir: artifacts/sure_k2_warmstart_24h/benchmark/sure_k2
+  base_math_output_dir: artifacts/sure_k2_warmstart_24h/benchmark/base_math500
+  candidate_math_output_dir: artifacts/sure_k2_warmstart_24h/benchmark/sure_k2_math500
+
+report:
+  output_dir: artifacts/sure_k2_warmstart_24h/reports
+  experiment_id: sure_k2_warmstart_24h
+  summary_paths:
+    - artifacts/sure_k2_warmstart_24h/evaluation/internal_verifier/base/math500/summary.json
+    - artifacts/sure_k2_warmstart_24h/evaluation/internal_verifier/base/amc23/summary.json
+    - artifacts/sure_k2_warmstart_24h/evaluation/internal_verifier/sure_k2/math500/summary.json
+    - artifacts/sure_k2_warmstart_24h/evaluation/internal_verifier/sure_k2/amc23/summary.json
+  comparison_paths:
+    - artifacts/sure_k2_warmstart_24h/reports/math500_base_vs_sure.json
+    - artifacts/sure_k2_warmstart_24h/reports/amc23_base_vs_sure.json
+  training_runs:
+    - name: SuRe K2 warm-start full-parameter training
+      summary_path: artifacts/sure_k2_warmstart_24h/checkpoints/sure_k2_seed42/training_summary.json
+  ood_regression_path: artifacts/sure_k2_warmstart_24h/reports/ood_regression.json
+  official_benchmark_manifests:
+    - artifacts/sure_k2_warmstart_24h/benchmark/base/manifest.json
+    - artifacts/sure_k2_warmstart_24h/benchmark/base_math500/manifest.json
+    - artifacts/sure_k2_warmstart_24h/benchmark/sure_k2/manifest.json
+    - artifacts/sure_k2_warmstart_24h/benchmark/sure_k2_math500/manifest.json
+  internal_verifier_calibration_path: null

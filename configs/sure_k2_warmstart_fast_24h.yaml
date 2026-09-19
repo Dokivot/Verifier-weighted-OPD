@@ -1,0 +1,48 @@
+defaults: sure_k2_warmstart_24h.yaml
+
+project:
+  name: sure-k2-warmstart-fast-24h
+  run_tier: warmstart-fast-throughput
+
+paths:
+  artifact_dir: artifacts/sure_k2_warmstart_fast_24h
+  checkpoint_dir: artifacts/sure_k2_warmstart_fast_24h/checkpoints
+  report_dir: artifacts/sure_k2_warmstart_fast_24h/reports
+
+evaluation:
+  output_dir: artifacts/sure_k2_warmstart_fast_24h/evaluation/internal_verifier/base
+  candidate_output_dir: artifacts/sure_k2_warmstart_fast_24h/evaluation/internal_verifier/sure_k2
+
+benchmark:
+  base_output_dir: artifacts/sure_k2_warmstart_fast_24h/benchmark/base
+  candidate_output_dir: artifacts/sure_k2_warmstart_fast_24h/benchmark/sure_k2
+  base_math_output_dir: artifacts/sure_k2_warmstart_fast_24h/benchmark/base_math500
+  candidate_math_output_dir: artifacts/sure_k2_warmstart_fast_24h/benchmark/sure_k2_math500
+
+report:
+  output_dir: artifacts/sure_k2_warmstart_fast_24h/reports
+  experiment_id: sure_k2_warmstart_fast_24h
+  summary_paths:
+    - artifacts/sure_k2_warmstart_fast_24h/evaluation/internal_verifier/base/math500/summary.json
+    - artifacts/sure_k2_warmstart_fast_24h/evaluation/internal_verifier/base/amc23/summary.json
+    - artifacts/sure_k2_warmstart_fast_24h/evaluation/internal_verifier/sure_k2/math500/summary.json
+    - artifacts/sure_k2_warmstart_fast_24h/evaluation/internal_verifier/sure_k2/amc23/summary.json
+  comparison_paths:
+    - artifacts/sure_k2_warmstart_fast_24h/reports/math500_base_vs_sure.json
+    - artifacts/sure_k2_warmstart_fast_24h/reports/amc23_base_vs_sure.json
+  training_runs:
+    - name: SuRe K2 warm-start fast-throughput training
+      summary_path: artifacts/sure_k2_warmstart_fast_24h/checkpoints/sure_k2_seed42/training_summary.json
+  ood_regression_path: artifacts/sure_k2_warmstart_fast_24h/reports/ood_regression.json
+  official_benchmark_manifests:
+    - artifacts/sure_k2_warmstart_fast_24h/benchmark/base/manifest.json
+    - artifacts/sure_k2_warmstart_fast_24h/benchmark/base_math500/manifest.json
+    - artifacts/sure_k2_warmstart_fast_24h/benchmark/sure_k2/manifest.json
+    - artifacts/sure_k2_warmstart_fast_24h/benchmark/sure_k2_math500/manifest.json
+
+training:
+  output_dir: artifacts/sure_k2_warmstart_fast_24h/checkpoints/sure_k2_seed42
+  rollout_micro_batch_size: 4
+  teacher_micro_batch_size: 2
+  student_micro_batch_size: 2
+  invocation_step_limit: 1
